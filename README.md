@@ -146,6 +146,6 @@ There is no `map` and `reduce` and so on, but there's also no way to properly im
 
 Instead, it seems people often cast things to `interface{}` to write generic code, then using type switches or reflection to "recover" from that. Or, just not write generic code.
 
-## No optional functional parameters
+## No optional function parameters
 
 You could make multiple functions for different variants, or pass an options struct of sorts, but both are pretty annoying imo.
