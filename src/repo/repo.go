@@ -7,15 +7,15 @@ import (
 	"path/filepath"
 	"regexp"
 	"strings"
+	"sync"
 
 	"golang.org/x/sync/errgroup"
 	"marcelbeumer.com/notes/note"
 )
 
 type record struct {
-	note  *note.Note
-	path  string
-	isNew bool
+	note *note.Note
+	path *string
 }
 
 type LoadingState int
@@ -26,14 +26,50 @@ const (
 	Loaded
 )
 
+func getNoteFileName(note *note.Note) string {
+	dateStr := note.CreatedTs.Format("2006-01-02-1504-05")
+	title := ""
+	if note.Title != nil {
+		title = *note.Title
+	}
+	res := dateStr
+	if title != "" {
+		res = res + "-" + slugify(title)
+	}
+	return res + ".md"
+}
+
+func getFolderBaseStr(note *note.Note) string {
+	return ""
+}
+
+func getFolderDateStr(note *note.Note) string {
+	return note.CreatedTs.Format("2006-01")
+}
+
+func slugify(v string) string {
+	disallowedChars := regexp.MustCompile("[^a-z0-9-]")
+	doubleDash := regexp.MustCompile("-{2,}")
+	trailingSlash := regexp.MustCompile("-$")
+	leadingSlash := regexp.MustCompile("^-")
+	res := strings.ToLower(v)
+	res = disallowedChars.ReplaceAllString(res, "-")
+	res = doubleDash.ReplaceAllString(res, "-")
+	res = trailingSlash.ReplaceAllString(res, "-")
+	res = leadingSlash.ReplaceAllString(res, "-")
+	return res
+}
+
 type Repo struct {
-	records      map[string]record
+	records      [](*record)
 	loadingState LoadingState
+	recordsMutex *sync.Mutex
 }
 
 func New() *Repo {
 	return &Repo{
-		records: make(map[string]record),
+		records:      make([](*record), 0),
+		recordsMutex: &sync.Mutex{},
 	}
 }
 
@@ -55,7 +91,7 @@ func (r *Repo) LoadNotes() error {
 		return errors.New(fmt.Sprintf("Could not glob for notes: %v", err))
 	}
 
-	r.records = make(map[string]record, 0)
+	r.records = make([](*record), 0)
 
 	g := new(errgroup.Group)
 	for _, path := range files {
@@ -84,95 +120,91 @@ func (r *Repo) Notes() [](*note.Note) {
 }
 
 func (r *Repo) AddNote(note *note.Note) {
-	rec := record{
-		note:  note,
-		path:  getNotePath(note),
-		isNew: true,
-	}
-	r.records[rec.path] = rec
+	rec := record{note: note}
+	r.addRecord(&rec)
 }
 
+func foo(v *string) {
+	fmt.Println(*v)
+}
+
+func (r *Repo) addRecord(record *record) {
+	if record.path != nil {
+		r.removeRecordWithPath(*record.path)
+	}
+	r.recordsMutex.Lock()
+	defer r.recordsMutex.Unlock()
+	r.records = append(r.records, record)
+}
+
+func (r *Repo) removeRecordWithPath(path string) {
+	r.recordsMutex.Lock()
+	defer r.recordsMutex.Unlock()
+	records := make([](*record), 0)
+	for _, v := range r.records {
+		if *v.path != path {
+			records = append(records, v)
+		}
+	}
+	r.records = records
+}
+
+// func (r *Repo) addNoteOnPath
+//
+// func (r *Repo) RemovePath(note *note.Note) {
+// }
+
 func (r *Repo) Sync(newOnly bool) error {
-	cleanTagsDir()
-	for _, record := range r.records {
-		if newOnly && !record.isNew {
-			continue
-		}
-		notePath := getNotePath(record.note)
-		if notePath != record.path {
-			// delete from disk
-			// delete record from map
-			// set new path on record
-			// add record to map
-		}
-	}
-	for _, record := range r.records {
-		if newOnly && !record.isNew {
-			continue
-		}
-		// write note to disk
-		record.isNew = false
-		// make errgroup for each tag link stuff
-	}
+	r.cleanTagsDir()
+	// for _, record := range r.records {
+	// 	if newOnly && !record.isNew {
+	// 		continue
+	// 	}
+	// 	notePath := getNotePath(record.note)
+	// 	if notePath != record.path {
+	// 		// delete from disk
+	// 		// delete record from map
+	// 		// set new path on record
+	// 		// add record to map
+	// 	}
+	// }
+	// for _, record := range r.records {
+	// 	if newOnly && !record.isNew {
+	// 		continue
+	// 	}
+	// 	// write note to disk
+	// 	record.isNew = false
+	// 	// make errgroup for each tag link stuff
+	// }
 	return nil
 }
 
-func cleanTagsDir() error { return nil }
-func deleteFile() error   { return nil }
-
-func getFolderBaseStr(note *note.Note) string {
-	return ""
-}
-
-func getFolderDateStr(note *note.Note) string {
-	return note.CreatedTs.Format("2006-01")
-}
-
-func slugify(v string) string {
-	disallowedChars := regexp.MustCompile("[^a-z0-9-]")
-	doubleDash := regexp.MustCompile("-{2,}")
-	trailingSlash := regexp.MustCompile("-$")
-	leadingSlash := regexp.MustCompile("^-")
-	res := strings.ToLower(v)
-	res = disallowedChars.ReplaceAllString(res, "-")
-	res = doubleDash.ReplaceAllString(res, "-")
-	res = trailingSlash.ReplaceAllString(res, "-")
-	res = leadingSlash.ReplaceAllString(res, "-")
-	return res
-}
-
-func getNoteFileName(note *note.Note) string {
-	dateStr := note.CreatedTs.Format("2006-01-02-1504-05")
-	title := ""
-	if note.Title != nil {
-		title = *note.Title
-	}
-	res := dateStr
-	if title != "" {
-		res = res + "-" + slugify(title)
-	}
-	return res + ".md"
-}
-
-func getNotePath(note *note.Note) string {
-	return path.Join(
+func (r *Repo) notePath(note *note.Note) (string, error) {
+	path, err := filepath.Abs(path.Join(
+		r.NotesRootDir(),
 		getFolderBaseStr(note),
 		getFolderDateStr(note),
 		getNoteFileName(note),
-	)
+	))
+	if err != nil {
+		return "", err
+	}
+	return path, nil
 }
 
+func (r *Repo) cleanTagsDir() error { return nil }
+func (r *Repo) deleteFile() error   { return nil }
+
 func (r *Repo) loadNoteFromPath(path string) (*note.Note, error) {
-	// absPath, err := filepath.Abs(path)
-	// if err != nil {
-	// 	return new(note.Note), err
-	// }
+	absPath, err := filepath.Abs(path)
+	if err != nil {
+		return new(note.Note), err
+	}
 	n, err := note.FromPath(path)
 	if err != nil {
 		return new(note.Note), err
 	}
-	newRecord := record{note: n, path: path, isNew: true}
-	fmt.Println(path, getNotePath(n))
-	r.records[path] = newRecord
+	newRecord := record{note: n, path: &absPath}
+	r.addRecord(&newRecord)
 	return n, nil
 }
