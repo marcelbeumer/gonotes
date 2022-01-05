@@ -14,6 +14,9 @@ func main() {
 	title := "Example title"
 	n.Title = &title
 	repo.AddNote(n)
+	if err := repo.Sync(false); err != nil {
+		panic(err)
+	}
 	// notes := repo.Notes()
 	// fmt.Printf("%#q", notes)
 

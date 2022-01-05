@@ -92,6 +92,34 @@ func (r *Repo) AddNote(note *note.Note) {
 	r.records[rec.path] = rec
 }
 
+func (r *Repo) Sync(newOnly bool) error {
+	cleanTagsDir()
+	for _, record := range r.records {
+		if newOnly && !record.isNew {
+			continue
+		}
+		notePath := getNotePath(record.note)
+		if notePath != record.path {
+			// delete from disk
+			// delete record from map
+			// set new path on record
+			// add record to map
+		}
+	}
+	for _, record := range r.records {
+		if newOnly && !record.isNew {
+			continue
+		}
+		// write note to disk
+		record.isNew = false
+		// make errgroup for each tag link stuff
+	}
+	return nil
+}
+
+func cleanTagsDir() error { return nil }
+func deleteFile() error   { return nil }
+
 func getFolderBaseStr(note *note.Note) string {
 	return ""
 }
@@ -135,11 +163,16 @@ func getNotePath(note *note.Note) string {
 }
 
 func (r *Repo) loadNoteFromPath(path string) (*note.Note, error) {
+	// absPath, err := filepath.Abs(path)
+	// if err != nil {
+	// 	return new(note.Note), err
+	// }
 	n, err := note.FromPath(path)
 	if err != nil {
 		return new(note.Note), err
 	}
 	newRecord := record{note: n, path: path, isNew: true}
+	fmt.Println(path, getNotePath(n))
 	r.records[path] = newRecord
 	return n, nil
 }
