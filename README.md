@@ -19,7 +19,7 @@ It sucks you can't compile when you're moving around code without cleaning every
 Consumers of your `func () string[]` may get a result value that `== nil` when the function returns an uninitialized array and otherwise not. It's probably idiomatic to just not do a nil-check on those return values but, a language that brags about being restrictive and enterprise-safe on purpose leaves a hole where an implementation detail
 may introduce bugs further down.
 
-```
+```go
 func testA() []string {
 	return make([]string, 0)
 }
@@ -43,7 +43,7 @@ func testC() {
 
 Similarly, uninitialized maps type-check against initialized maps. As a result, you can not seem make safe assumptions about a map in a struct without doing a nil-check.
 
-```
+```go
 type example struct {
 	stuff map[string]string
 	name  string
@@ -63,7 +63,7 @@ func useExample(shouldPanic bool) {
 
 This has big implications. Let's say you have a package like so:
 
-```
+```go
 package example
 
 type Example struct {
@@ -84,7 +84,7 @@ func (e *Example) Something() {
 
 Now when something is using your package he/she needs to know if it's needed to use your `New` constructor function, or if it's safe to just create the struct.
 
-```
+```go
 	e := example.New()
 	e.Something() // fine
 
