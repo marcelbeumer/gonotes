@@ -1,8 +1,10 @@
 # notes-in-go
 
-Partial port of personal notes system from TS to Go, for learning purposes
+Partial port of personal notes system from TS to Go, for learning purposes. Work in progress.
 
 # What I like about go
+
+TODO
 
 # What I dislike about go
 
