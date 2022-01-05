@@ -15,12 +15,15 @@ import (
 )
 
 type MetaField interface {
+	sealed()
 	String() string
 }
 
 type StringField struct {
 	string
 }
+
+func (f *StringField) sealed() {}
 
 func (f *StringField) String() string {
 	return f.string
@@ -29,6 +32,8 @@ func (f *StringField) String() string {
 type TimeField struct {
 	time time.Time
 }
+
+func (f *TimeField) sealed() {}
 
 func (f *TimeField) String() string {
 	return fmt.Sprintf("%v", f.time)
@@ -42,6 +47,8 @@ type IntField struct {
 	int
 }
 
+func (f *IntField) sealed() {}
+
 func (f *IntField) String() string {
 	return fmt.Sprintf("%v", f.int)
 }
@@ -53,6 +60,8 @@ func (f *IntField) Int() int {
 type TagsField struct {
 	string
 }
+
+func (f *TagsField) sealed() {}
 
 func (f *TagsField) String() string {
 	return f.string
@@ -74,6 +83,8 @@ func (f *TagsField) Tags() []string {
 type UnknownField struct {
 	value interface{}
 }
+
+func (f *UnknownField) sealed() {}
 
 func (f *UnknownField) String() string {
 	return fmt.Sprintf("%v", f.value)
