@@ -98,9 +98,34 @@ I wanted to do something like `type MetaField = StringField | TimeField | IntFie
 
 Idiomatic seems to be:
 
+```go
+type MetaField interface {
+	sealed()
+	Method()
+}
+
+type StringField struct { }
+func (f *StringField) sealed() {}
+func (f *StringField) Method() {}
+
+type TimeField struct { }
+func (f *TimeField) sealed() {}
+func (f *TimeField) Method() {}
 ```
 
+and then use type switches to figure out if a specific `Metafield` is one of the "subtypes". Apart from the bulky switch statements (compared to more elegant pattern matching), those switch statement can not be exhaustive because switch does not support that, and no one except the package itself knows which variants belong to `Metafield`.
+
+In some cases you could solve the sum type by just using one struct that can contain all variants
+
+```go
+type MetaField struct {
+	Time *time.Time
+	Int  *int
+  String *string
+}
 ```
+
+Or something like that.
 
 ## Implicit interface implementations
 
