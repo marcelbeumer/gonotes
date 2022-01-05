@@ -4,7 +4,12 @@ Partial port of personal notes system from TS to Go, for learning purposes. Work
 
 # What I like about go
 
-TODO
+- Relatively simple coming from TypeScript
+- Most things easy to find in the docs and examples, otherwise elsewhere online
+- With some exceptions, I overall like the relatively calm and clean syntax, despite being c-style
+- Convention of capital identifiers exporting
+- Module conventions like `import "foo/bar/name"` and then `name.Method()`
+- Seems like API's are often straight forward and stdlib provides a lot of basics
 
 # What I dislike about go
 
