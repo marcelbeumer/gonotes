@@ -119,8 +119,8 @@ In some cases you could solve the sum type by just using one struct that can con
 
 ```go
 type MetaField struct {
-	Time *time.Time
-	Int  *int
+  Time *time.Time
+  Int  *int
   String *string
 }
 ```
