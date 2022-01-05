@@ -6,7 +6,6 @@ import (
 	"fmt"
 	"io"
 	"os"
-	"path/filepath"
 	"strings"
 	"time"
 
@@ -184,10 +183,15 @@ func FromString(string string) (*Note, error) {
 }
 
 func FromPath(path string) (*Note, error) {
-	file, err := os.Open(filepath.Join(repoRoot(), path))
+	file, err := os.Open(path)
 	if err != nil {
-		return &Note{}, err
+		return new(Note),
+			errors.New(fmt.Sprintf("Could not open file %v: %v", path, err))
 	}
 	defer file.Close()
-	return FromReader(file)
+	n, err := FromReader(file)
+	if err != nil {
+		return new(Note), err
+	}
+	return n, nil
 }

@@ -1,6 +1,8 @@
 package main
 
 import (
+	"fmt"
+
 	"marcelbeumer.com/notes/repo"
 )
 
@@ -9,6 +11,9 @@ func main() {
 	if err := repo.LoadNotes(); err != nil {
 		panic(err)
 	}
+	notes := repo.Notes()
+	fmt.Printf("%#q", notes)
+
 	// _, err := note.FromPath("notes/2022-01/2022-01-04-2155-26-example-one.md")
 	// if err != nil {
 	// 	panic(err)
