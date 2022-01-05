@@ -87,7 +87,8 @@ func repoRoot() string {
 
 func New() *Note {
 	return &Note{
-		Meta: make(map[string]MetaField, 0),
+		Meta:      make(map[string]MetaField, 0),
+		CreatedTs: time.Now(),
 	}
 }
 

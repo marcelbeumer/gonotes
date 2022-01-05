@@ -5,6 +5,8 @@ import (
 	"fmt"
 	"path"
 	"path/filepath"
+	"regexp"
+	"strings"
 
 	"golang.org/x/sync/errgroup"
 	"marcelbeumer.com/notes/note"
@@ -95,11 +97,33 @@ func getFolderBaseStr(note *note.Note) string {
 }
 
 func getFolderDateStr(note *note.Note) string {
-	return ""
+	return note.CreatedTs.Format("2006-01")
+}
+
+func slugify(v string) string {
+	disallowedChars := regexp.MustCompile("[^a-z0-9-]")
+	doubleDash := regexp.MustCompile("-{2,}")
+	trailingSlash := regexp.MustCompile("-$")
+	leadingSlash := regexp.MustCompile("^-")
+	res := strings.ToLower(v)
+	res = disallowedChars.ReplaceAllString(res, "-")
+	res = doubleDash.ReplaceAllString(res, "-")
+	res = trailingSlash.ReplaceAllString(res, "-")
+	res = leadingSlash.ReplaceAllString(res, "-")
+	return res
 }
 
 func getNoteFileName(note *note.Note) string {
-	return ""
+	dateStr := note.CreatedTs.Format("2006-01-02-1504-05")
+	title := ""
+	if note.Title != nil {
+		title = *note.Title
+	}
+	res := dateStr
+	if title != "" {
+		res = res + "-" + slugify(title)
+	}
+	return res + ".md"
 }
 
 func getNotePath(note *note.Note) string {
