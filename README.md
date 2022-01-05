@@ -23,6 +23,19 @@ It sucks you can't compile when you're moving around code without cleaning every
 
 (What's next, not allowing a build when the tests fail?)
 
+## Null pointer exceptions
+
+```
+func foo(v *string) {
+	fmt.Println(*v)
+}
+
+var s *string
+foo(s) // panic
+```
+
+So you need to do nil checks everywhere, with which I read there are some gotchas with as well.
+
 ## Type-system can not distinguish between initialized and uninitialized maps and arrays
 
 Consumers of your `func () string[]` may get a result value that `== nil` when the function returns an uninitialized array and otherwise not. It's probably idiomatic to just not do a nil-check on those return values but, a language that brags about being restrictive and enterprise-safe on purpose leaves a hole where an implementation detail
