@@ -7,7 +7,6 @@ import (
 	"io"
 	"os"
 	"path/filepath"
-	"regexp"
 	"strings"
 	"time"
 
@@ -55,29 +54,6 @@ func (f *IntField) String() string {
 
 func (f *IntField) Int() int {
 	return f.int
-}
-
-type TagsField struct {
-	string
-}
-
-func (f *TagsField) sealed() {}
-
-func (f *TagsField) String() string {
-	return f.string
-}
-
-func (f *TagsField) Tags() []string {
-	r := regexp.MustCompile("[,\\s]")
-	parts := r.Split(f.string, -1)
-	tags := make([]string, 0)
-	for _, v := range parts {
-		trimmed := strings.TrimSpace(v)
-		if trimmed != "" {
-			tags = append(tags, v)
-		}
-	}
-	return tags
 }
 
 type UnknownField struct {
@@ -148,13 +124,7 @@ func FromReader(reader io.Reader) (Note, error) {
 	for k, v := range parsedMeta {
 		switch v := v.(type) {
 		case string:
-			if k == "tags" {
-				field := &TagsField{string: v}
-				note.meta[k] = field
-				field.Tags()
-			} else {
-				note.meta[k] = &StringField{string: v}
-			}
+			note.meta[k] = &StringField{string: v}
 		case int:
 			note.meta[k] = &IntField{int: v}
 		case time.Time:
@@ -175,10 +145,30 @@ func FromReader(reader io.Reader) (Note, error) {
 	}
 
 	if date := note.meta["date"]; date != nil {
-		// TODO
-		// note.createdTs = time.
+		t, e := ParseTime(date.String())
+		if e != nil {
+			return note, e
+		}
+		note.createdTs = t
 	} else {
 		return note, errors.New("Date field not found")
+	}
+
+	if modified := note.meta["modified"]; modified != nil {
+		t, e := ParseTime(modified.String())
+		if e != nil {
+			return note, e
+		}
+		note.modifiedTs = &t
+	}
+
+	if tags := note.meta["tags"]; tags != nil {
+		note.tags = ParseTags(tags.String())
+	}
+
+	if href := note.meta["href"]; href != nil {
+		v := strings.TrimSpace(href.String())
+		note.href = &v
 	}
 
 	return note, nil
