@@ -66,13 +66,13 @@ func (f *UnknownField) String() string {
 }
 
 type Note struct {
-	meta       map[string]MetaField
-	title      *string
-	href       *string
-	createdTs  time.Time
-	modifiedTs *time.Time
-	contents   string
-	tags       []string
+	Meta       map[string]MetaField
+	Title      *string
+	Href       *string
+	CreatedTs  time.Time
+	ModifiedTs *time.Time
+	Contents   string
+	Tags       []string
 }
 
 func (n *Note) Markdown() string {
@@ -87,7 +87,7 @@ func repoRoot() string {
 
 func New() *Note {
 	return &Note{
-		meta: make(map[string]MetaField, 0),
+		Meta: make(map[string]MetaField, 0),
 	}
 }
 
@@ -122,56 +122,56 @@ func FromReader(reader io.Reader) (*Note, error) {
 	}
 
 	note := New()
-	note.contents = strings.Join(contentLines, "\n")
+	note.Contents = strings.Join(contentLines, "\n")
 
 	for k, v := range parsedMeta {
 		switch v := v.(type) {
 		case string:
-			note.meta[k] = &StringField{string: v}
+			note.Meta[k] = &StringField{string: v}
 		case int:
-			note.meta[k] = &IntField{int: v}
+			note.Meta[k] = &IntField{int: v}
 		case time.Time:
-			note.meta[k] = &TimeField{time: v}
+			note.Meta[k] = &TimeField{time: v}
 		default:
-			note.meta[k] = &UnknownField{value: v}
+			note.Meta[k] = &UnknownField{value: v}
 		}
 	}
 
-	if title := note.meta["title"]; title != nil {
+	if title := note.Meta["title"]; title != nil {
 		switch v := title.(type) {
 		case *StringField:
 			s := v.String()
-			note.title = &s
+			note.Title = &s
 		default:
 			return note, errors.New("Title not of correct type")
 		}
 	}
 
-	if date := note.meta["date"]; date != nil {
+	if date := note.Meta["date"]; date != nil {
 		t, e := ParseTime(date.String())
 		if e != nil {
 			return note, e
 		}
-		note.createdTs = t
+		note.CreatedTs = t
 	} else {
 		return note, errors.New("Date field not found")
 	}
 
-	if modified := note.meta["modified"]; modified != nil {
+	if modified := note.Meta["modified"]; modified != nil {
 		t, e := ParseTime(modified.String())
 		if e != nil {
 			return note, e
 		}
-		note.modifiedTs = &t
+		note.ModifiedTs = &t
 	}
 
-	if tags := note.meta["tags"]; tags != nil {
-		note.tags = ParseTags(tags.String())
+	if tags := note.Meta["tags"]; tags != nil {
+		note.Tags = ParseTags(tags.String())
 	}
 
-	if href := note.meta["href"]; href != nil {
+	if href := note.Meta["href"]; href != nil {
 		v := strings.TrimSpace(href.String())
-		note.href = &v
+		note.Href = &v
 	}
 
 	return note, nil

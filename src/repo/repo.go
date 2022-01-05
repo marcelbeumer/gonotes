@@ -81,6 +81,35 @@ func (r *Repo) Notes() [](*note.Note) {
 	return res
 }
 
+func (r *Repo) AddNote(note *note.Note) {
+	rec := record{
+		note:  note,
+		path:  getNotePath(note),
+		isNew: true,
+	}
+	r.records[rec.path] = rec
+}
+
+func getFolderBaseStr(note *note.Note) string {
+	return ""
+}
+
+func getFolderDateStr(note *note.Note) string {
+	return ""
+}
+
+func getNoteFileName(note *note.Note) string {
+	return ""
+}
+
+func getNotePath(note *note.Note) string {
+	return path.Join(
+		getFolderBaseStr(note),
+		getFolderDateStr(note),
+		getNoteFileName(note),
+	)
+}
+
 func (r *Repo) loadNoteFromPath(path string) (*note.Note, error) {
 	n, err := note.FromPath(path)
 	if err != nil {
