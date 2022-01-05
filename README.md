@@ -137,4 +137,4 @@ You just implement the methods for a struct to satisfy an interface without bein
 
 There is no `map` and `reduce` and so on, but there's also no way to properly implement then without support for generic programming, through generics or otherwise.
 
-Instead, it seems people often cast things to `interface{}` to write generic code, then using type switches or reflection to "recover" from that.
+Instead, it seems people often cast things to `interface{}` to write generic code, then using type switches or reflection to "recover" from that. Or, just not write generic code.
