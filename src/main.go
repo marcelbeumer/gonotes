@@ -1,12 +1,19 @@
 package main
 
 import (
+	"fmt"
+
+	flag "github.com/spf13/pflag"
 	"marcelbeumer.com/notes/note"
 	"marcelbeumer.com/notes/repo"
 )
 
+var tags = flag.StringArrayP("tags", "t", make([]string, 0), "help message for flagname")
+
 func main() {
+	flag.Parse()
 	repo := repo.New()
+	fmt.Println(tags)
 	if err := repo.LoadNotes(); err != nil {
 		panic(err)
 	}
