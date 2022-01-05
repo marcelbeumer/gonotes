@@ -91,3 +91,17 @@ Now when something is using your package he/she needs to know if it's needed to 
 	e2 := example.Example{}
 	e2.Something() // panic
 ```
+
+## No sum type and no great alternatives either
+
+I wanted to do something like `type MetaField = StringField | TimeField | IntField` but you can not in Go. Instead, there are ways to workaround but none of them seem satisfying.
+
+Idiomatic seems to be:
+
+```
+
+```
+
+## Implicit interface implementations
+
+You just implement the methods for a struct to satisfy an interface without being explicit about it. On one hand it's great to have some sort of structural typing here, but on the other hand, it's annoying you can not make explicit if you wanted to, because instead of getting clear error messages where you are trying to implement a certain interface, you now get more cryptic messages where you are trying to use them.
