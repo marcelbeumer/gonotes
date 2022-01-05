@@ -132,3 +132,9 @@ Or something like that.
 ## Implicit interface implementations
 
 You just implement the methods for a struct to satisfy an interface without being explicit about it. On one hand it's great to have some sort of structural typing here, but on the other hand, it's annoying you can not make explicit if you wanted to, because instead of getting clear error messages where you are trying to implement a certain interface, you now get more cryptic messages where you are trying to use them.
+
+## No generic programming, casting to `interface{}`
+
+There is no `map` and `reduce` and so on, but there's also no way to properly implement then without support for generic programming, through generics or otherwise.
+
+Instead, it seems people often cast things to `interface{}` to write generic code, then using type switches or reflection to "recover" from that.
