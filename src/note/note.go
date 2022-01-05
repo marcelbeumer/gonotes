@@ -86,7 +86,13 @@ func repoRoot() string {
 	return "../"
 }
 
-func FromReader(reader io.Reader) (Note, error) {
+func New() *Note {
+	return &Note{
+		meta: make(map[string]MetaField, 0),
+	}
+}
+
+func FromReader(reader io.Reader) (*Note, error) {
 	scanner := bufio.NewScanner(reader)
 	metaLines := []string{}
 	contentLines := []string{}
@@ -106,20 +112,18 @@ func FromReader(reader io.Reader) (Note, error) {
 	}
 
 	if err := scanner.Err(); err != nil {
-		return Note{}, err
+		return &Note{}, err
 	}
 
 	var parsedMeta map[string]interface{}
 	bytes := []byte(strings.Join(metaLines, "\n"))
 	err := yaml.Unmarshal(bytes, &parsedMeta)
 	if err != nil {
-		return Note{}, err
+		return &Note{}, err
 	}
 
-	note := Note{
-		contents: strings.Join(contentLines, "\n"),
-		meta:     make(map[string]MetaField, 0),
-	}
+	note := New()
+	note.contents = strings.Join(contentLines, "\n")
 
 	for k, v := range parsedMeta {
 		switch v := v.(type) {
@@ -174,15 +178,15 @@ func FromReader(reader io.Reader) (Note, error) {
 	return note, nil
 }
 
-func FromString(string string) (Note, error) {
+func FromString(string string) (*Note, error) {
 	reader := strings.NewReader(string)
 	return FromReader(reader)
 }
 
-func FromPath(path string) (Note, error) {
+func FromPath(path string) (*Note, error) {
 	file, err := os.Open(filepath.Join(repoRoot(), path))
 	if err != nil {
-		return Note{}, err
+		return &Note{}, err
 	}
 	defer file.Close()
 	return FromReader(file)
