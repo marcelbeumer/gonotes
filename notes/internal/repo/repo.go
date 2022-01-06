@@ -78,6 +78,11 @@ func (r *Repo) LoadingState() LoadingState {
 	return r.loadingState
 }
 
+func (r *Repo) CheckDir() error {
+	_, err := r.rootDir()
+	return err
+}
+
 func (r *Repo) rootDir() (string, error) {
 	dotfilename := ".is_notes_root"
 	cwd, err := os.Getwd()

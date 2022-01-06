@@ -32,11 +32,15 @@ func main() {
 	renameFrom := renameTagCmd.String("from", "", "Where to rename from, ex: foo/bar")
 	renameTo := renameTagCmd.String("to", "", "Where to rename to, ex: something/else")
 
+	r := repo.New()
+	err := r.CheckDir()
+	if err != nil {
+		errAndExit(err)
+	}
+
 	if len(os.Args) < 2 {
 		printHelpAndExit()
 	}
-
-	r := repo.New()
 
 	switch os.Args[1] {
 	case "new":
