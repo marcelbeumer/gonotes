@@ -202,8 +202,12 @@ func (r *Repo) Sync(newOnly bool) error {
 			for _, tag := range record.note.Tags {
 				tag := tag
 				g.Go(func() error {
-					tagPath := path.Join(r.tagsDir(), tag)
-					err := os.MkdirAll(tagPath, 0755)
+					tagsDir, err := r.tagsDir()
+					if err != nil {
+						return err
+					}
+					tagPath := path.Join(tagsDir, tag)
+					err = os.MkdirAll(tagPath, 0755)
 					if err != nil {
 						return err
 					}
