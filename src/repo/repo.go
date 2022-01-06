@@ -3,6 +3,7 @@ package repo
 import (
 	"errors"
 	"fmt"
+	"os"
 	"path"
 	"path/filepath"
 	"regexp"
@@ -156,6 +157,27 @@ func (r *Repo) removeRecordWithPath(path string) {
 
 func (r *Repo) Sync(newOnly bool) error {
 	r.cleanTagsDir()
+	for _, record := range r.records {
+		if newOnly && record.path != nil {
+			continue
+		}
+		path, err := r.notePath(record.note)
+		if err != nil {
+			return err
+		}
+		if record.path != nil && *record.path != path {
+			_, err := os.Stat(*record.path)
+			exists := !errors.Is(err, os.ErrNotExist)
+			if exists {
+				err := os.Remove(*record.path)
+				if err != nil {
+					return err
+				}
+			}
+		}
+		record.path = &path
+
+	}
 	// for _, record := range r.records {
 	// 	if newOnly && !record.isNew {
 	// 		continue
@@ -192,8 +214,20 @@ func (r *Repo) notePath(note *note.Note) (string, error) {
 	return path, nil
 }
 
-func (r *Repo) cleanTagsDir() error { return nil }
-func (r *Repo) deleteFile() error   { return nil }
+func (r *Repo) tagsDir() string {
+	// TODO: implement
+	return "../tags"
+}
+
+func (r *Repo) cleanTagsDir() error {
+	err := os.RemoveAll(r.tagsDir())
+	if err != nil {
+		return err
+	}
+	return nil
+}
+
+func (r *Repo) deleteFile() error { return nil }
 
 func (r *Repo) loadNoteFromPath(path string) (*note.Note, error) {
 	absPath, err := filepath.Abs(path)
