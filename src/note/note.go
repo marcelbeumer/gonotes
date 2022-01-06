@@ -95,6 +95,33 @@ func (n *Note) Markdown() string {
 	return md
 }
 
+func (n *Note) RenameTag(from string, to string) {
+	fromParts := strings.Split(from, "/")
+	toParts := strings.Split(to, "/")
+	for tagI, tag := range n.Tags {
+		tagParts := strings.Split(tag, "/")
+		shouldRename := true
+		for fromI, fromPart := range fromParts {
+			if fromPart != tagParts[fromI] {
+				shouldRename = false
+				break
+			}
+		}
+		if shouldRename {
+			newParts := make([]string, 0)
+			for _, p := range toParts {
+				newParts = append(newParts, p)
+			}
+			for i, p := range tagParts {
+				if i >= len(fromParts) {
+					newParts = append(newParts, p)
+				}
+			}
+			n.Tags[tagI] = strings.Join(newParts, "/")
+		}
+	}
+}
+
 func New() *Note {
 	return &Note{
 		Meta:      make(map[string]MetaField, 0),

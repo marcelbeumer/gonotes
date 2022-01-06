@@ -20,10 +20,18 @@ func main() {
 	// title := "Example title"
 	// n.Title = &title
 	// repo.AddNote(n)
-	if err := repo.Sync(false); err != nil {
-		panic(err)
-	}
-	// notes := repo.Notes()
+
+	// if err := repo.Sync(false); err != nil {
+	// 	panic(err)
+	// }
+
+	// note := repo.Notes()[1]
+	// if note != nil {
+	// 	fmt.Println(note.Tags)
+	// 	note.RenameTag("special", "foo")
+	// 	fmt.Println(note.Tags)
+	// }
+
 	// fmt.Printf("%#q", notes)
 
 	// _, err := note.FromPath("notes/2022-01/2022-01-04-2155-26-example-one.md")
