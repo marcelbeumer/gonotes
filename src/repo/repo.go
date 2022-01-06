@@ -246,13 +246,20 @@ func (r *Repo) notePath(note *note.Note) (string, error) {
 	return path, nil
 }
 
-func (r *Repo) tagsDir() string {
-	// TODO: implement
-	return "../tags"
+func (r *Repo) tagsDir() (string, error) {
+	repoRoot, err := r.RepoRootDir()
+	if err != nil {
+		return "", err
+	}
+	return path.Join(repoRoot, "tags"), nil
 }
 
 func (r *Repo) cleanTagsDir() error {
-	err := os.RemoveAll(r.tagsDir())
+	tagsDir, err := r.tagsDir()
+	if err != nil {
+		return err
+	}
+	err = os.RemoveAll(tagsDir)
 	if err != nil {
 		return err
 	}
