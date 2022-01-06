@@ -238,7 +238,7 @@ func (r *Repo) Sync(newOnly bool) error {
 			err = os.WriteFile(*record.path, []byte(md), 0644)
 			if err != nil {
 				return errors.New(
-					fmt.Sprintf("Could not write note to %s", *record.path),
+					fmt.Sprintf("Could not write note to %s: %v", *record.path, err),
 				)
 			}
 
