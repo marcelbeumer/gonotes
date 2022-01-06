@@ -1,6 +1,6 @@
 ---
 title: Example in December
-date: 2022-12-21 20:00:05
+date: 2021-12-21 20:00:05
 tags: example journal special
 ---
 
