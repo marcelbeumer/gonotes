@@ -4,6 +4,7 @@ import (
 	"errors"
 	"fmt"
 	"os"
+	"os/exec"
 	"path"
 	"path/filepath"
 	"regexp"
@@ -78,16 +79,31 @@ func (r *Repo) LoadingState() LoadingState {
 	return r.loadingState
 }
 
-func (r *Repo) NotesRootDir() string {
-	// TODO: implement
-	return "../notes"
+func (r *Repo) RepoRootDir() (string, error) {
+	cmdOut, err := exec.Command("git", "rev-parse", "--show-toplevel").Output()
+	if err != nil {
+		return "", errors.New(fmt.Sprintf("Could not find git repo root: %v", err))
+	}
+	return strings.TrimSpace(string(cmdOut)), nil
+}
+
+func (r *Repo) NotesRootDir() (string, error) {
+	repoRoot, err := r.RepoRootDir()
+	if err != nil {
+		return "", err
+	}
+	return path.Join(repoRoot, "notes"), nil
 }
 
 func (r *Repo) LoadNotes() error {
 	if r.loadingState == Loading {
 		return errors.New("Already loading")
 	}
-	files, err := filepath.Glob(path.Join(r.NotesRootDir(), "**/*.md"))
+	notesRootDir, err := r.NotesRootDir()
+	if err != nil {
+		return err
+	}
+	files, err := filepath.Glob(path.Join(notesRootDir, "**/*.md"))
 	if err != nil {
 		return errors.New(fmt.Sprintf("Could not glob for notes: %v", err))
 	}
@@ -213,8 +229,13 @@ func (r *Repo) Sync(newOnly bool) error {
 }
 
 func (r *Repo) notePath(note *note.Note) (string, error) {
+	notesRootDir, err := r.NotesRootDir()
+	if err != nil {
+		return "", err
+	}
+
 	path, err := filepath.Abs(path.Join(
-		r.NotesRootDir(),
+		notesRootDir,
 		getFolderBaseStr(note),
 		getFolderDateStr(note),
 		getNoteFileName(note),
