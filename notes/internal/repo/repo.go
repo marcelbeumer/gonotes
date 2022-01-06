@@ -61,6 +61,10 @@ func slugify(v string) string {
 	return res
 }
 
+func logStderr(msg string) {
+	fmt.Fprintf(os.Stderr, msg)
+}
+
 type Repo struct {
 	records      [](*record)
 	loadingState LoadingState
@@ -122,9 +126,20 @@ func (r *Repo) LoadNotes() error {
 	if err != nil {
 		return err
 	}
-	files, err := filepath.Glob(path.Join(notesSrcDir, "**/*.md"))
-	if err != nil {
-		return errors.New(fmt.Sprintf("Could not glob for notes: %v", err))
+
+	files := make([]string, 0)
+	patterns := []string{
+		path.Join(notesSrcDir, "**/*.md"),
+		path.Join(notesSrcDir, "*.md"),
+	}
+	for _, pattern := range patterns {
+		res, err := filepath.Glob(pattern)
+		if err != nil {
+			return errors.New(fmt.Sprintf("Could not glob for notes: %v", err))
+		}
+		for _, filePath := range res {
+			files = append(files, filePath)
+		}
 	}
 
 	r.records = make([](*record), 0)
@@ -142,7 +157,10 @@ func (r *Repo) LoadNotes() error {
 		return err
 	}
 
-	r.loadingState = Loading
+	r.loadingState = Loaded
+
+	logStderr(fmt.Sprintf("Loaded %d notes\n", len(r.records)))
+
 	return nil
 }
 
@@ -212,6 +230,10 @@ func (r *Repo) Sync(newOnly bool) error {
 			}
 			record.path = &notePath
 			md := record.note.Markdown()
+			err = os.MkdirAll(path.Dir(*record.path), 0755)
+			if err != nil {
+				return err
+			}
 			err = os.WriteFile(*record.path, []byte(md), 0644)
 			if err != nil {
 				return errors.New(
