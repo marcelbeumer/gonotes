@@ -10,6 +10,7 @@ Partial port of personal notes system from TS to Go, for learning purposes. Work
 - Convention of capital identifiers exporting
 - Module conventions like `import "foo/bar/name"` and then `name.Method()`
 - Seems like API's are often straight forward and stdlib provides a lot of basics, it feels much easier to get stuff done "the right way" than with node for example
+- Everything feels lightweight and quick, prob because of calm syntax (compared to TS), short package and function names and quick compile times
 
 # What I dislike about go
 
