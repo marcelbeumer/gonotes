@@ -23,7 +23,7 @@ It sucks you can't compile when you're moving around code without cleaning every
 
 (What's next, not allowing a build when the tests fail?)
 
-## Null pointer exceptions
+## Nil pointer checks
 
 ```
 func foo(v *string) {
@@ -35,6 +35,18 @@ foo(s) // panic
 ```
 
 So you need to do nil checks everywhere, with which I read there are some gotchas with as well.
+
+## No one liners for returns statements
+
+You keep repeating stuff like
+
+```
+if err != nil {
+  return err
+}
+```
+
+I would have liked to see at least something like `return err if err != nil` or similar
 
 ## Type-system can not distinguish between initialized and uninitialized maps and arrays
 
