@@ -150,22 +150,17 @@ func (r *Repo) removeRecordWithPath(path string) {
 	r.records = records
 }
 
-// func (r *Repo) addNoteOnPath
-//
-// func (r *Repo) RemovePath(note *note.Note) {
-// }
-
 func (r *Repo) Sync(newOnly bool) error {
 	r.cleanTagsDir()
 	for _, record := range r.records {
 		if newOnly && record.path != nil {
 			continue
 		}
-		path, err := r.notePath(record.note)
+		notePath, err := r.notePath(record.note)
 		if err != nil {
 			return err
 		}
-		if record.path != nil && *record.path != path {
+		if record.path != nil && *record.path != notePath {
 			_, err := os.Stat(*record.path)
 			exists := !errors.Is(err, os.ErrNotExist)
 			if exists {
@@ -175,8 +170,7 @@ func (r *Repo) Sync(newOnly bool) error {
 				}
 			}
 		}
-		record.path = &path
-		fmt.Printf("Printing md for %s\n", *record.path)
+		record.path = &notePath
 		md := record.note.Markdown()
 		err = os.WriteFile(*record.path, []byte(md), 0644)
 		if err != nil {
@@ -184,27 +178,21 @@ func (r *Repo) Sync(newOnly bool) error {
 				fmt.Sprintf("Could not write note to %s", *record.path),
 			)
 		}
+
+		for _, tag := range record.note.Tags {
+			tagPath := path.Join(r.tagsDir(), tag)
+			err := os.MkdirAll(tagPath, 0755)
+			if err != nil {
+				return err
+			}
+			fileName := path.Base(*record.path)
+			err = os.Symlink(*record.path, path.Join(tagPath, fileName))
+			if err != nil {
+				return err
+			}
+		}
+
 	}
-	// for _, record := range r.records {
-	// 	if newOnly && !record.isNew {
-	// 		continue
-	// 	}
-	// 	notePath := getNotePath(record.note)
-	// 	if notePath != record.path {
-	// 		// delete from disk
-	// 		// delete record from map
-	// 		// set new path on record
-	// 		// add record to map
-	// 	}
-	// }
-	// for _, record := range r.records {
-	// 	if newOnly && !record.isNew {
-	// 		continue
-	// 	}
-	// 	// write note to disk
-	// 	record.isNew = false
-	// 	// make errgroup for each tag link stuff
-	// }
 	return nil
 }
 

@@ -4,7 +4,6 @@ import (
 	"fmt"
 
 	flag "github.com/spf13/pflag"
-	"marcelbeumer.com/notes/note"
 	"marcelbeumer.com/notes/repo"
 )
 
@@ -17,10 +16,10 @@ func main() {
 	if err := repo.LoadNotes(); err != nil {
 		panic(err)
 	}
-	n := note.New()
-	title := "Example title"
-	n.Title = &title
-	repo.AddNote(n)
+	// n := note.New()
+	// title := "Example title"
+	// n.Title = &title
+	// repo.AddNote(n)
 	if err := repo.Sync(false); err != nil {
 		panic(err)
 	}
