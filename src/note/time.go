@@ -6,8 +6,12 @@ import (
 	"time"
 )
 
-func ParseTime(dateStr string) (time.Time, error) {
-	t1, e := time.Parse("2006-01-02 15:04:05 MST", dateStr+" UTC")
+const (
+	baseFormat = "2006-01-02 15:04:05"
+)
+
+func parseTime(dateStr string) (time.Time, error) {
+	t1, e := time.Parse(baseFormat+" MST", dateStr+" UTC")
 	if e != nil {
 		return time.Time{},
 			errors.New(fmt.Sprintf("Could not parse date: %v", e))
@@ -24,4 +28,11 @@ func ParseTime(dateStr string) (time.Time, error) {
 		loc,
 	)
 	return t2, nil
+}
+
+func serializeTime(time *time.Time) string {
+	if time == nil {
+		return ""
+	}
+	return time.Format(baseFormat)
 }

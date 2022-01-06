@@ -76,13 +76,23 @@ type Note struct {
 }
 
 func (n *Note) Markdown() string {
-	// TODO: implement
-	return ""
-}
-
-func repoRoot() string {
-	// TODO: implement
-	return "../"
+	md := "---\n"
+	if n.Title != nil && *n.Title != "" {
+		md += fmt.Sprintf("title: %s\n", *n.Title)
+	}
+	md += fmt.Sprintf("date: %s\n", serializeTime(&n.CreatedTs))
+	if n.ModifiedTs != nil {
+		md += fmt.Sprintf("modified: %s\n", serializeTime(n.ModifiedTs))
+	}
+	if n.Href != nil && *n.Href != "" {
+		md += fmt.Sprintf("href: %s\n", *n.Href)
+	}
+	if len(n.Tags) > 0 {
+		md += fmt.Sprintf("tags: %s\n", strings.Join(n.Tags, ", "))
+	}
+	md += "---\n"
+	md += n.Contents + "\n"
+	return md
 }
 
 func New() *Note {
@@ -149,7 +159,7 @@ func FromReader(reader io.Reader) (*Note, error) {
 	}
 
 	if date := note.Meta["date"]; date != nil {
-		t, e := ParseTime(date.String())
+		t, e := parseTime(date.String())
 		if e != nil {
 			return note, e
 		}
@@ -159,7 +169,7 @@ func FromReader(reader io.Reader) (*Note, error) {
 	}
 
 	if modified := note.Meta["modified"]; modified != nil {
-		t, e := ParseTime(modified.String())
+		t, e := parseTime(modified.String())
 		if e != nil {
 			return note, e
 		}

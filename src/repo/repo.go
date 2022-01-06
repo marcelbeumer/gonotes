@@ -176,7 +176,14 @@ func (r *Repo) Sync(newOnly bool) error {
 			}
 		}
 		record.path = &path
-
+		fmt.Printf("Printing md for %s\n", *record.path)
+		md := record.note.Markdown()
+		err = os.WriteFile(*record.path, []byte(md), 0644)
+		if err != nil {
+			return errors.New(
+				fmt.Sprintf("Could not write note to %s", *record.path),
+			)
+		}
 	}
 	// for _, record := range r.records {
 	// 	if newOnly && !record.isNew {

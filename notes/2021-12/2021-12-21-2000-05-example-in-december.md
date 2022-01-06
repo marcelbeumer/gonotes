@@ -1,7 +1,7 @@
 ---
 title: Example in December
 date: 2021-12-21 20:00:05
-tags: example journal special
+tags: example, journal, special
 ---
 
 Lorem ipsum dolor sit amet, consectetur adipiscing elit. Suspendisse porttitor rutrum lectus, nec accumsan turpis lobortis at. Praesent eu rhoncus nibh. Nam dictum sagittis nisi at viverra. Ut mattis, diam in facilisis dictum, ligula lectus dapibus orci, eget placerat nulla felis sed nibh. Curabitur sodales rutrum eros vitae tempor. Sed quis dictum odio. Pellentesque metus nisl, egestas id laoreet quis, pellentesque non elit. Maecenas condimentum, neque a facilisis luctus, arcu sapien convallis turpis, non posuere diam risus id tellus. Aenean in nibh odio. Phasellus gravida orci eu ultrices ullamcorper. Proin hendrerit lacus non tristique rhoncus. Ut eleifend maximus eros eget gravida. Maecenas non rutrum erat. Nullam dictum risus eros, sed fringilla tortor auctor sit amet. In hac habitasse platea dictumst.
