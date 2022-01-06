@@ -196,7 +196,8 @@ func FromReader(reader io.Reader) (*Note, error) {
 		}
 		note.CreatedTs = t
 	} else {
-		return note, errors.New("Date field not found")
+		note.CreatedTs = time.Now()
+		// return note, errors.New("Date field not found")
 	}
 
 	if modified := note.Meta["modified"]; modified != nil {

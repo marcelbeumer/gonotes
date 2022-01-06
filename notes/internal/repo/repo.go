@@ -10,6 +10,7 @@ import (
 	"strings"
 	"sync"
 
+	"github.com/bmatcuk/doublestar/v4"
 	"github.com/marcelbeumer/notes-in-go/notes/internal/note"
 	"golang.org/x/sync/errgroup"
 )
@@ -127,19 +128,14 @@ func (r *Repo) LoadNotes() error {
 		return err
 	}
 
-	files := make([]string, 0)
-	patterns := []string{
-		path.Join(notesSrcDir, "**/*.md"),
-		path.Join(notesSrcDir, "*.md"),
+	globRes, err := doublestar.Glob(os.DirFS(notesSrcDir), "**/*md")
+	if err != nil {
+		return errors.New(fmt.Sprintf("Could not glob for notes: %v", err))
 	}
-	for _, pattern := range patterns {
-		res, err := filepath.Glob(pattern)
-		if err != nil {
-			return errors.New(fmt.Sprintf("Could not glob for notes: %v", err))
-		}
-		for _, filePath := range res {
-			files = append(files, filePath)
-		}
+
+	files := make([]string, 0)
+	for _, s := range globRes {
+		files = append(files, path.Join(notesSrcDir, s))
 	}
 
 	r.records = make([](*record), 0)
@@ -147,10 +143,15 @@ func (r *Repo) LoadNotes() error {
 	g := new(errgroup.Group)
 	for _, path := range files {
 		path := path
-		g.Go(func() error {
-			_, err := r.loadNoteFromPath(path)
+		_, err := r.loadNoteFromPath(path)
+		if err != nil {
 			return err
-		})
+		}
+
+		// g.Go(func() error {
+		// 	_, err := r.loadNoteFromPath(path)
+		// 	return err
+		// })
 	}
 
 	if err := g.Wait(); err != nil {

@@ -16,7 +16,11 @@ func parseTime(dateStr string) (time.Time, error) {
 		return time.Time{},
 			errors.New(fmt.Sprintf("Could not parse date: %v", e))
 	}
-	loc, _ := time.LoadLocation("Europe/Berlin")
+	loc, err := time.LoadLocation("Europe/Berlin")
+	if err != nil {
+		return time.Time{},
+			errors.New(fmt.Sprintf("Could not get location from date str: %s", dateStr))
+	}
 	t2 := time.Date(
 		t1.Year(),
 		t1.Month(),
