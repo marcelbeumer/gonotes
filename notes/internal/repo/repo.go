@@ -242,30 +242,24 @@ func (r *Repo) Sync(newOnly bool) error {
 				)
 			}
 
-			g := new(errgroup.Group)
 			for _, tag := range record.note.Tags {
 				tag := tag
-				g.Go(func() error {
-					tagsDir, err := r.tagsDir()
-					if err != nil {
-						return err
-					}
-					tagPath := path.Join(tagsDir, tag)
-					err = os.MkdirAll(tagPath, 0755)
-					if err != nil {
-						return err
-					}
-					fileName := path.Base(*record.path)
-					err = os.Symlink(*record.path, path.Join(tagPath, fileName))
-					if err != nil {
-						return err
-					}
-					return nil
-				})
+				tagsDir, err := r.tagsDir()
+				if err != nil {
+					return err
+				}
+				tagPath := path.Join(tagsDir, tag)
+				err = os.MkdirAll(tagPath, 0755)
+				if err != nil {
+					return err
+				}
+				fileName := path.Base(*record.path)
+				err = os.Symlink(*record.path, path.Join(tagPath, fileName))
+				if err != nil {
+					return err
+				}
 			}
-			if err := g.Wait(); err != nil {
-				return err
-			}
+
 			return nil
 		})
 	}
