@@ -26,11 +26,11 @@ It sucks you can't compile when you're moving around code without cleaning every
 
 ## Nil pointer checks
 
-```
+```go
 func foo(v *string) {
-  // if v == nil {
-  // return
-  // }
+	// if v == nil {
+	// return
+	// }
 	fmt.Println(*v)
 }
 
@@ -44,10 +44,10 @@ So you need to do nil checks everywhere, with which I read there are some gotcha
 
 You keep repeating stuff like
 
-```
-if err != nil {
-  return err
-}
+```go
+	if err != nil {
+		return err
+	}
 ```
 
 I would have liked to see at least something like `return err if err != nil` or similar
