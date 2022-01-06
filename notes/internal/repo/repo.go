@@ -79,12 +79,18 @@ func (r *Repo) LoadingState() LoadingState {
 }
 
 func (r *Repo) rootDir() (string, error) {
-	return os.Getwd()
-	// cmdOut, err := exec.Command("git", "rev-parse", "--show-toplevel").Output()
-	// if err != nil {
-	// 	return "", errors.New(fmt.Sprintf("Could not find git repo root: %v", err))
-	// }
-	// return strings.TrimSpace(string(cmdOut)), nil
+	dotfilename := ".is_notes_root"
+	cwd, err := os.Getwd()
+	if err != nil {
+		return cwd, err
+	}
+	_, err = os.Stat(path.Join(cwd, dotfilename))
+	exists := !errors.Is(err, os.ErrNotExist)
+	if !exists {
+		return cwd,
+			errors.New(fmt.Sprintf("Could not find %s file", dotfilename))
+	}
+	return cwd, nil
 }
 
 func (r *Repo) NotesSrcDir() (string, error) {
