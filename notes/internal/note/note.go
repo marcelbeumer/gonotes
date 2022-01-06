@@ -164,7 +164,7 @@ func FromReader(reader io.Reader) (*Note, error) {
 	}
 
 	note := New()
-	note.Contents = strings.Join(contentLines, "\n")
+	note.Contents = strings.Join(contentLines, "\n") + "\n"
 
 	for k, v := range parsedMeta {
 		switch v := v.(type) {
