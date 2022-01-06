@@ -28,6 +28,9 @@ It sucks you can't compile when you're moving around code without cleaning every
 
 ```
 func foo(v *string) {
+  // if v == nil {
+  // return
+  // }
 	fmt.Println(*v)
 }
 
