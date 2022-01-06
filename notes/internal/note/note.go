@@ -134,11 +134,15 @@ func FromReader(reader io.Reader) (*Note, error) {
 	metaLines := []string{}
 	contentLines := []string{}
 	withinMeta := false
+	metaDone := false
 
 	for scanner.Scan() {
 		text := scanner.Text()
-		if text == "---" {
+		if text == "---" && !metaDone {
 			withinMeta = !withinMeta
+			if !withinMeta {
+				metaDone = true
+			}
 		} else {
 			if withinMeta {
 				metaLines = append(metaLines, text)
