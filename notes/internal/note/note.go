@@ -84,14 +84,14 @@ func (n *Note) Markdown() string {
 	if n.ModifiedTs != nil {
 		md += fmt.Sprintf("modified: %s\n", serializeTime(n.ModifiedTs))
 	}
-	if n.Href != nil && *n.Href != "" {
-		md += fmt.Sprintf("href: %s\n", *n.Href)
-	}
 	if len(n.Tags) > 0 {
 		md += fmt.Sprintf("tags: %s\n", strings.Join(n.Tags, ", "))
 	}
+	if n.Href != nil && *n.Href != "" {
+		md += fmt.Sprintf("href: %s\n", *n.Href)
+	}
 	md += "---\n"
-	md += n.Contents + "\n"
+	md += n.Contents
 	return md
 }
 

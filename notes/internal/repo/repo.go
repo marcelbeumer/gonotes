@@ -57,8 +57,8 @@ func slugify(v string) string {
 	res := strings.ToLower(v)
 	res = disallowedChars.ReplaceAllString(res, "-")
 	res = doubleDash.ReplaceAllString(res, "-")
-	res = trailingSlash.ReplaceAllString(res, "-")
-	res = leadingSlash.ReplaceAllString(res, "-")
+	res = trailingSlash.ReplaceAllString(res, "")
+	res = leadingSlash.ReplaceAllString(res, "")
 	return res
 }
 
