@@ -167,7 +167,9 @@ func (r *Repo) removeRecordWithPath(path string) {
 }
 
 func (r *Repo) Sync(newOnly bool) error {
-	r.cleanTagsDir()
+	if !newOnly {
+		r.cleanTagsDir()
+	}
 	g := new(errgroup.Group)
 	for _, record := range r.records {
 		if newOnly && record.path != nil {
@@ -230,6 +232,18 @@ func (r *Repo) Sync(newOnly bool) error {
 		return err
 	}
 	return nil
+}
+
+func (r *Repo) PathIfStored(note *note.Note) (string, error) {
+	for _, record := range r.records {
+		if record.note == note {
+			if record.path == nil {
+				return "", errors.New("Note found but not yet stored")
+			}
+			return *record.path, nil
+		}
+	}
+	return "", errors.New("Note not found")
 }
 
 func (r *Repo) notePath(note *note.Note) (string, error) {
