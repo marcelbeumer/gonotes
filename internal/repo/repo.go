@@ -12,7 +12,7 @@ import (
 	"sync"
 
 	"golang.org/x/sync/errgroup"
-	"marcelbeumer.com/notes/note"
+	"marcelbeumer.com/notes/internal/note"
 )
 
 type record struct {
@@ -87,23 +87,31 @@ func (r *Repo) RepoRootDir() (string, error) {
 	return strings.TrimSpace(string(cmdOut)), nil
 }
 
-func (r *Repo) NotesRootDir() (string, error) {
+func (r *Repo) NotesSrcDir() (string, error) {
 	repoRoot, err := r.RepoRootDir()
 	if err != nil {
 		return "", err
 	}
-	return path.Join(repoRoot, "notes"), nil
+	return path.Join(repoRoot, "notes/src"), nil
+}
+
+func (r *Repo) tagsDir() (string, error) {
+	repoRoot, err := r.RepoRootDir()
+	if err != nil {
+		return "", err
+	}
+	return path.Join(repoRoot, "notes/tags"), nil
 }
 
 func (r *Repo) LoadNotes() error {
 	if r.loadingState == Loading {
 		return errors.New("Already loading")
 	}
-	notesRootDir, err := r.NotesRootDir()
+	notesSrcDir, err := r.NotesSrcDir()
 	if err != nil {
 		return err
 	}
-	files, err := filepath.Glob(path.Join(notesRootDir, "**/*.md"))
+	files, err := filepath.Glob(path.Join(notesSrcDir, "**/*.md"))
 	if err != nil {
 		return errors.New(fmt.Sprintf("Could not glob for notes: %v", err))
 	}
@@ -247,13 +255,13 @@ func (r *Repo) PathIfStored(note *note.Note) (string, error) {
 }
 
 func (r *Repo) notePath(note *note.Note) (string, error) {
-	notesRootDir, err := r.NotesRootDir()
+	notesSrcDir, err := r.NotesSrcDir()
 	if err != nil {
 		return "", err
 	}
 
 	path, err := filepath.Abs(path.Join(
-		notesRootDir,
+		notesSrcDir,
 		getFolderBaseStr(note),
 		getFolderDateStr(note),
 		getNoteFileName(note),
@@ -262,14 +270,6 @@ func (r *Repo) notePath(note *note.Note) (string, error) {
 		return "", err
 	}
 	return path, nil
-}
-
-func (r *Repo) tagsDir() (string, error) {
-	repoRoot, err := r.RepoRootDir()
-	if err != nil {
-		return "", err
-	}
-	return path.Join(repoRoot, "tags"), nil
 }
 
 func (r *Repo) cleanTagsDir() error {

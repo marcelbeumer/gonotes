@@ -6,8 +6,8 @@ import (
 	"os"
 
 	flag "github.com/spf13/pflag"
-	"marcelbeumer.com/notes/note"
-	"marcelbeumer.com/notes/repo"
+	"marcelbeumer.com/notes/internal/note"
+	"marcelbeumer.com/notes/internal/repo"
 )
 
 func printHelpAndExit() {
