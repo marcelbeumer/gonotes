@@ -5,9 +5,9 @@ import (
 	"fmt"
 	"os"
 
+	"github.com/marcelbeumer/notes-in-go/notes/internal/note"
+	"github.com/marcelbeumer/notes-in-go/notes/internal/repo"
 	flag "github.com/spf13/pflag"
-	"marcelbeumer.com/notes/internal/note"
-	"marcelbeumer.com/notes/internal/repo"
 )
 
 func printHelpAndExit() {

@@ -4,15 +4,14 @@ import (
 	"errors"
 	"fmt"
 	"os"
-	"os/exec"
 	"path"
 	"path/filepath"
 	"regexp"
 	"strings"
 	"sync"
 
+	"github.com/marcelbeumer/notes-in-go/notes/internal/note"
 	"golang.org/x/sync/errgroup"
-	"marcelbeumer.com/notes/internal/note"
 )
 
 type record struct {
@@ -79,28 +78,29 @@ func (r *Repo) LoadingState() LoadingState {
 	return r.loadingState
 }
 
-func (r *Repo) RepoRootDir() (string, error) {
-	cmdOut, err := exec.Command("git", "rev-parse", "--show-toplevel").Output()
-	if err != nil {
-		return "", errors.New(fmt.Sprintf("Could not find git repo root: %v", err))
-	}
-	return strings.TrimSpace(string(cmdOut)), nil
+func (r *Repo) rootDir() (string, error) {
+	return os.Getwd()
+	// cmdOut, err := exec.Command("git", "rev-parse", "--show-toplevel").Output()
+	// if err != nil {
+	// 	return "", errors.New(fmt.Sprintf("Could not find git repo root: %v", err))
+	// }
+	// return strings.TrimSpace(string(cmdOut)), nil
 }
 
 func (r *Repo) NotesSrcDir() (string, error) {
-	repoRoot, err := r.RepoRootDir()
+	rootDir, err := r.rootDir()
 	if err != nil {
 		return "", err
 	}
-	return path.Join(repoRoot, "notes/src"), nil
+	return path.Join(rootDir, "notes"), nil
 }
 
 func (r *Repo) tagsDir() (string, error) {
-	repoRoot, err := r.RepoRootDir()
+	rootDir, err := r.rootDir()
 	if err != nil {
 		return "", err
 	}
-	return path.Join(repoRoot, "notes/tags"), nil
+	return path.Join(rootDir, "tags"), nil
 }
 
 func (r *Repo) LoadNotes() error {
