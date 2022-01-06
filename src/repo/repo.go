@@ -152,46 +152,62 @@ func (r *Repo) removeRecordWithPath(path string) {
 
 func (r *Repo) Sync(newOnly bool) error {
 	r.cleanTagsDir()
+	g := new(errgroup.Group)
 	for _, record := range r.records {
 		if newOnly && record.path != nil {
 			continue
 		}
-		notePath, err := r.notePath(record.note)
-		if err != nil {
-			return err
-		}
-		if record.path != nil && *record.path != notePath {
-			_, err := os.Stat(*record.path)
-			exists := !errors.Is(err, os.ErrNotExist)
-			if exists {
-				err := os.Remove(*record.path)
-				if err != nil {
-					return err
+		record := record
+		g.Go(func() error {
+			notePath, err := r.notePath(record.note)
+			if err != nil {
+				return err
+			}
+			if record.path != nil && *record.path != notePath {
+				_, err := os.Stat(*record.path)
+				exists := !errors.Is(err, os.ErrNotExist)
+				if exists {
+					err := os.Remove(*record.path)
+					if err != nil {
+						return err
+					}
 				}
 			}
-		}
-		record.path = &notePath
-		md := record.note.Markdown()
-		err = os.WriteFile(*record.path, []byte(md), 0644)
-		if err != nil {
-			return errors.New(
-				fmt.Sprintf("Could not write note to %s", *record.path),
-			)
-		}
-
-		for _, tag := range record.note.Tags {
-			tagPath := path.Join(r.tagsDir(), tag)
-			err := os.MkdirAll(tagPath, 0755)
+			record.path = &notePath
+			md := record.note.Markdown()
+			err = os.WriteFile(*record.path, []byte(md), 0644)
 			if err != nil {
+				return errors.New(
+					fmt.Sprintf("Could not write note to %s", *record.path),
+				)
+			}
+
+			g := new(errgroup.Group)
+			for _, tag := range record.note.Tags {
+				tag := tag
+				g.Go(func() error {
+					tagPath := path.Join(r.tagsDir(), tag)
+					err := os.MkdirAll(tagPath, 0755)
+					if err != nil {
+						return err
+					}
+					fileName := path.Base(*record.path)
+					err = os.Symlink(*record.path, path.Join(tagPath, fileName))
+					if err != nil {
+						return err
+					}
+					return nil
+				})
+			}
+			if err := g.Wait(); err != nil {
 				return err
 			}
-			fileName := path.Base(*record.path)
-			err = os.Symlink(*record.path, path.Join(tagPath, fileName))
-			if err != nil {
-				return err
-			}
-		}
+			return nil
+		})
+	}
 
+	if err := g.Wait(); err != nil {
+		return err
 	}
 	return nil
 }
