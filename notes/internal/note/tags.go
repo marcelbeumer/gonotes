@@ -6,7 +6,7 @@ import (
 )
 
 func ParseTags(str string) []string {
-	r := regexp.MustCompile("[,\\s]")
+	r := regexp.MustCompile(`[,\s]`)
 	parts := r.Split(str, -1)
 	tags := make([]string, 0)
 	for _, v := range parts {

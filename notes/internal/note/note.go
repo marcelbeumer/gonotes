@@ -108,10 +108,7 @@ func (n *Note) RenameTag(from string, to string) {
 			}
 		}
 		if shouldRename {
-			newParts := make([]string, 0)
-			for _, p := range toParts {
-				newParts = append(newParts, p)
-			}
+			newParts := append(make([]string, 0), toParts...)
 			for i, p := range tagParts {
 				if i >= len(fromParts) {
 					newParts = append(newParts, p)
@@ -124,7 +121,7 @@ func (n *Note) RenameTag(from string, to string) {
 
 func New() *Note {
 	return &Note{
-		Meta:      make(map[string]MetaField, 0),
+		Meta:      make(map[string]MetaField),
 		CreatedTs: time.Now(),
 	}
 }
@@ -228,8 +225,7 @@ func FromString(string string) (*Note, error) {
 func FromPath(path string) (*Note, error) {
 	file, err := os.Open(path)
 	if err != nil {
-		return new(Note),
-			errors.New(fmt.Sprintf("Could not open file %v: %v", path, err))
+		return new(Note), fmt.Errorf("Could not open file %v: %v", path, err)
 	}
 	defer file.Close()
 	n, err := FromReader(file)

@@ -63,7 +63,7 @@ func slugify(v string) string {
 }
 
 func logStderr(msg string) {
-	fmt.Fprintf(os.Stderr, msg)
+	fmt.Fprint(os.Stderr, msg)
 }
 
 type Repo struct {
@@ -97,8 +97,7 @@ func (r *Repo) rootDir() (string, error) {
 	_, err = os.Stat(path.Join(cwd, dotfilename))
 	exists := !errors.Is(err, os.ErrNotExist)
 	if !exists {
-		return cwd,
-			errors.New(fmt.Sprintf("Could not find %s file", dotfilename))
+		return cwd, fmt.Errorf("Could not find %s file", dotfilename)
 	}
 	return cwd, nil
 }
@@ -130,7 +129,7 @@ func (r *Repo) LoadNotes() error {
 
 	globRes, err := doublestar.Glob(os.DirFS(notesSrcDir), "**/*md")
 	if err != nil {
-		return errors.New(fmt.Sprintf("Could not glob for notes: %v", err))
+		return fmt.Errorf("Could not glob for notes: %v", err)
 	}
 
 	files := make([]string, 0)
@@ -179,10 +178,6 @@ func (r *Repo) AddNote(note *note.Note) {
 	r.addRecord(&rec)
 }
 
-func foo(v *string) {
-	fmt.Println(*v)
-}
-
 func (r *Repo) addRecord(record *record) {
 	if record.path != nil {
 		r.removeRecordWithPath(*record.path)
@@ -206,7 +201,9 @@ func (r *Repo) removeRecordWithPath(path string) {
 
 func (r *Repo) Sync(newOnly bool) error {
 	if !newOnly {
-		r.cleanTagsDir()
+		if err := r.cleanTagsDir(); err != nil {
+			return err
+		}
 	}
 	g := new(errgroup.Group)
 	for _, record := range r.records {
@@ -237,9 +234,7 @@ func (r *Repo) Sync(newOnly bool) error {
 			}
 			err = os.WriteFile(*record.path, []byte(md), 0644)
 			if err != nil {
-				return errors.New(
-					fmt.Sprintf("Could not write note to %s: %v", *record.path, err),
-				)
+				return fmt.Errorf("Could not write note to %s: %v", *record.path, err)
 			}
 
 			for _, tag := range record.note.Tags {
@@ -311,8 +306,6 @@ func (r *Repo) cleanTagsDir() error {
 	}
 	return nil
 }
-
-func (r *Repo) deleteFile() error { return nil }
 
 func (r *Repo) loadNoteFromPath(path string) (*note.Note, error) {
 	absPath, err := filepath.Abs(path)

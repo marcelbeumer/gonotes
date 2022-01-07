@@ -44,13 +44,15 @@ func main() {
 
 	switch os.Args[1] {
 	case "new":
-		newCmd.Parse(os.Args[2:])
+		if err := newCmd.Parse(os.Args[2:]); err != nil {
+			errAndExit(err)
+		}
 		n := note.New()
 		if newTitle != nil && *newTitle != "" {
-			n.Title = *&newTitle
+			n.Title = newTitle
 		}
 		if newHref != nil && *newHref != "" {
-			n.Href = *&newHref
+			n.Href = newHref
 		}
 		if newTags != nil && len(*newTags) > 0 {
 			n.Tags = *newTags
@@ -66,7 +68,9 @@ func main() {
 		}
 		fmt.Println(notePath)
 	case "sync":
-		syncCmd.Parse(os.Args[2:])
+		if err := syncCmd.Parse(os.Args[2:]); err != nil {
+			errAndExit(err)
+		}
 		err := r.LoadNotes()
 		if err != nil {
 			errAndExit(err)
@@ -76,7 +80,9 @@ func main() {
 			errAndExit(err)
 		}
 	case "rename-tag":
-		renameTagCmd.Parse(os.Args[2:])
+		if err := renameTagCmd.Parse(os.Args[2:]); err != nil {
+			errAndExit(err)
+		}
 		err := r.LoadNotes()
 		if err != nil {
 			errAndExit(err)

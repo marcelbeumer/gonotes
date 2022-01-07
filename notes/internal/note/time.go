@@ -1,7 +1,6 @@
 package note
 
 import (
-	"errors"
 	"fmt"
 	"time"
 )
@@ -13,13 +12,11 @@ const (
 func parseTime(dateStr string) (time.Time, error) {
 	t1, e := time.Parse(baseFormat+" MST", dateStr+" UTC")
 	if e != nil {
-		return time.Time{},
-			errors.New(fmt.Sprintf("Could not parse date: %v", e))
+		return time.Time{}, fmt.Errorf("Could not parse date: %v", e)
 	}
 	loc, err := time.LoadLocation("Europe/Berlin")
 	if err != nil {
-		return time.Time{},
-			errors.New(fmt.Sprintf("Could not get location from date str: %s", dateStr))
+		return time.Time{}, fmt.Errorf("Could not get location from date str: %s", dateStr)
 	}
 	t2 := time.Date(
 		t1.Year(),
