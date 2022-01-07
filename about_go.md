@@ -33,7 +33,7 @@ var s *string
 foo(s) // panic
 ```
 
-So you need to do nil checks everywhere, with which I read there are some gotchas with as well.
+So you need to do nil checks everywhere, with which I read there are some gotchas with as well. That said, it seems go linters can catch these for you.
 
 ## No one liners for returns statements
 
@@ -45,7 +45,15 @@ You keep repeating stuff like
 	}
 ```
 
-I would have liked to see at least something like `return err if err != nil` or similar
+I would have liked to see at least something like `return err if err != nil` or similar.
+
+In cases when you are interested in none of the return values except the error, you can do this though:
+
+```go
+	if err := r.Sync(true); err != nil {
+		return err
+	}
+```
 
 ## Type-system can not distinguish between initialized and uninitialized maps and arrays
 
@@ -75,6 +83,8 @@ func testC() {
 ```
 
 Similarly, uninitialized maps type-check against initialized maps. As a result, you can not seem make safe assumptions about a map in a struct without doing a nil-check.
+
+Maybe go linters can warn about returning an unintialized something, but with default `golangci-lint` settings it didn't.
 
 ```go
 type example struct {
