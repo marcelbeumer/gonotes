@@ -3,13 +3,16 @@
 Port of personal notes system from TS to Go, for learning purposes.  
 I made [some notes](./about_go.md) on my first experiences writing Go.
 
-# Install
+# Setup
 
-```
-go install github.com/marcelbeumer/notes-in-go/notes
-```
+- `go install github.com/marcelbeumer/notes-in-go/notes@latest`
+- `mkdir my_notes_folder`
+- `cd my_notes_folder`
+- `touch .is_notes_root`
 
-# Run from source
+# Usage
 
-- run `go mod tidy` inside `notes` folder
-- `./scripts/examples` to build and run against `examples` folder
+- `notes new --title "Example note" --tag topic/subtopic --tag special`
+- `notes sync`
+
+See source for details
