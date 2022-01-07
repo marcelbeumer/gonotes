@@ -3,6 +3,7 @@ package repo
 import (
 	"errors"
 	"fmt"
+	"math"
 	"os"
 	"path"
 	"path/filepath"
@@ -205,56 +206,45 @@ func (r *Repo) Sync(newOnly bool) error {
 			return err
 		}
 	}
-	g := new(errgroup.Group)
+
+	allRecords := make([]*record, 0)
 	for _, record := range r.records {
 		if newOnly && record.path != nil {
 			continue
 		}
-		record := record
+		allRecords = append(allRecords, record)
+	}
+
+	g := new(errgroup.Group)
+
+	concurCount := 5
+	sliceSize := int(math.Ceil(float64(len(allRecords)) / float64(concurCount)))
+	doneSize := 0
+
+	fmt.Printf("Syncing %d notes per job\n", sliceSize)
+
+	for i := 0; i <= concurCount; i++ {
+		start := i * sliceSize
+		end := start + sliceSize
+		if start > len(allRecords) {
+			break
+		}
+		if end > len(allRecords) {
+			end = len(allRecords)
+		}
+		slice := allRecords[start:end]
+		if len(slice) == 0 {
+			break
+		}
+
+		doneSize += len(slice)
+		fmt.Printf("Syncing %d/%d notes in job #%d\n", len(slice), len(allRecords), i)
 		g.Go(func() error {
-			notePath, err := r.notePath(record.note)
-			if err != nil {
-				return err
-			}
-			if record.path != nil && *record.path != notePath {
-				_, err := os.Stat(*record.path)
-				exists := !errors.Is(err, os.ErrNotExist)
-				if exists {
-					err := os.Remove(*record.path)
-					if err != nil {
-						return err
-					}
-				}
-			}
-			record.path = &notePath
-			md := record.note.Markdown()
-			err = os.MkdirAll(path.Dir(*record.path), 0755)
-			if err != nil {
-				return err
-			}
-			err = os.WriteFile(*record.path, []byte(md), 0644)
-			if err != nil {
-				return fmt.Errorf("Could not write note to %s: %v", *record.path, err)
-			}
-
-			for _, tag := range record.note.Tags {
-				tag := tag
-				tagsDir, err := r.tagsDir()
-				if err != nil {
-					return err
-				}
-				tagPath := path.Join(tagsDir, tag)
-				err = os.MkdirAll(tagPath, 0755)
-				if err != nil {
-					return err
-				}
-				fileName := path.Base(*record.path)
-				err = os.Symlink(*record.path, path.Join(tagPath, fileName))
-				if err != nil {
+			for _, record := range slice {
+				if err := r.syncRecord(record); err != nil {
 					return err
 				}
 			}
-
 			return nil
 		})
 	}
@@ -262,6 +252,58 @@ func (r *Repo) Sync(newOnly bool) error {
 	if err := g.Wait(); err != nil {
 		return err
 	}
+
+	fmt.Printf("Synced %d/%d notes\n", doneSize, len(allRecords))
+	return nil
+}
+
+func (r *Repo) syncRecord(record *record) error {
+	if record == nil {
+		return errors.New("record nilptr")
+	}
+	notePath, err := r.notePath(record.note)
+	if err != nil {
+		return err
+	}
+	if record.path != nil && *record.path != notePath {
+		_, err := os.Stat(*record.path)
+		exists := !errors.Is(err, os.ErrNotExist)
+		if exists {
+			err := os.Remove(*record.path)
+			if err != nil {
+				return err
+			}
+		}
+	}
+	record.path = &notePath
+	md := record.note.Markdown()
+	err = os.MkdirAll(path.Dir(*record.path), 0755)
+	if err != nil {
+		return err
+	}
+	err = os.WriteFile(*record.path, []byte(md), 0644)
+	if err != nil {
+		return fmt.Errorf("Could not write note to %s: %v", *record.path, err)
+	}
+
+	for _, tag := range record.note.Tags {
+		tag := tag
+		tagsDir, err := r.tagsDir()
+		if err != nil {
+			return err
+		}
+		tagPath := path.Join(tagsDir, tag)
+		err = os.MkdirAll(tagPath, 0755)
+		if err != nil {
+			return err
+		}
+		fileName := path.Base(*record.path)
+		err = os.Symlink(*record.path, path.Join(tagPath, fileName))
+		if err != nil {
+			return err
+		}
+	}
+
 	return nil
 }
 
