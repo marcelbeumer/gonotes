@@ -58,7 +58,7 @@ func main() {
 			n.Tags = *newTags
 		}
 		r.AddNote(n)
-		err := r.Sync(true)
+		err := r.Sync(true, true)
 		if err != nil {
 			errAndExit(err)
 		}
@@ -75,7 +75,7 @@ func main() {
 		if err != nil {
 			errAndExit(err)
 		}
-		err = r.Sync(false)
+		err = r.Sync(false, false)
 		if err != nil {
 			errAndExit(err)
 		}
@@ -102,7 +102,7 @@ func main() {
 		for _, note := range r.Notes() {
 			note.RenameTag(from, to)
 		}
-		err = r.Sync(false)
+		err = r.Sync(false, false)
 		if err != nil {
 			errAndExit(err)
 		}
