@@ -6,16 +6,8 @@ I made [some notes](./about_go.md) on my first experiences writing Go.
 # Install
 
 ```
-go install github.com/marcelbeumer/notes-in-go/notes@latest
+go install github.com/marcelbeumer/notes-in-go/notes
 ```
-
-or
-
-```
-go install github.com/marcelbeumer/notes-in-go/notes@<revision>
-```
-
-`@latest` does not seem to upgrade well when running it to upgrade, will read into publishing modules later and publish versions properly.
 
 # Run from source
 

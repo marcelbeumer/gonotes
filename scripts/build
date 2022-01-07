@@ -1,3 +1,2 @@
 #!/bin/sh
-cd notes
-go build -o ../build/notes .
+go build -o build/notes ./notes
