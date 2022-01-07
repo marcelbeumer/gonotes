@@ -67,6 +67,10 @@ func logStderr(msg string) {
 	fmt.Fprint(os.Stderr, msg)
 }
 
+func logfStderr(format string, a ...interface{}) {
+	fmt.Fprintf(os.Stderr, format, a...)
+}
+
 type Repo struct {
 	records      [](*record)
 	loadingState LoadingState
@@ -140,22 +144,12 @@ func (r *Repo) LoadNotes() error {
 
 	r.records = make([](*record), 0)
 
-	g := new(errgroup.Group)
 	for _, path := range files {
 		path := path
 		_, err := r.loadNoteFromPath(path)
 		if err != nil {
 			return err
 		}
-
-		// g.Go(func() error {
-		// 	_, err := r.loadNoteFromPath(path)
-		// 	return err
-		// })
-	}
-
-	if err := g.Wait(); err != nil {
-		return err
 	}
 
 	r.loadingState = Loaded
@@ -200,7 +194,7 @@ func (r *Repo) removeRecordWithPath(path string) {
 	r.records = records
 }
 
-func (r *Repo) Sync(newOnly bool) error {
+func (r *Repo) Sync(newOnly bool, silent bool) error {
 	if !newOnly {
 		if err := r.cleanTagsDir(); err != nil {
 			return err
@@ -221,7 +215,9 @@ func (r *Repo) Sync(newOnly bool) error {
 	sliceSize := int(math.Ceil(float64(len(allRecords)) / float64(concurCount)))
 	doneSize := 0
 
-	fmt.Printf("Syncing %d notes per job\n", sliceSize)
+	if !silent {
+		logfStderr("Syncing %d notes per job\n", sliceSize)
+	}
 
 	for i := 0; i <= concurCount; i++ {
 		start := i * sliceSize
@@ -238,7 +234,11 @@ func (r *Repo) Sync(newOnly bool) error {
 		}
 
 		doneSize += len(slice)
-		fmt.Printf("Syncing %d/%d notes in job #%d\n", len(slice), len(allRecords), i)
+
+		if !silent {
+			logfStderr("Syncing %d/%d notes in job #%d\n", len(slice), len(allRecords), i)
+		}
+
 		g.Go(func() error {
 			for _, record := range slice {
 				if err := r.syncRecord(record); err != nil {
@@ -253,7 +253,10 @@ func (r *Repo) Sync(newOnly bool) error {
 		return err
 	}
 
-	fmt.Printf("Synced %d/%d notes\n", doneSize, len(allRecords))
+	if !silent {
+		logfStderr("Synced %d/%d notes\n", doneSize, len(allRecords))
+	}
+
 	return nil
 }
 
