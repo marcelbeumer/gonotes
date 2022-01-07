@@ -170,6 +170,8 @@ type MetaField struct {
 
 Or something like that.
 
+Go 1.18 will introduce [union constraint elements](https://go.googlesource.com/proposal/+/refs/heads/master/design/43651-type-parameters.md#union-constraint-element). Not 100% sure, but that might fix it.
+
 ## Implicit interface implementations
 
 You just implement the methods for a struct to satisfy an interface without being explicit about it. On one hand it's great to have some sort of structural typing here, but on the other hand, it's annoying you can not make explicit if you wanted to, because instead of getting clear error messages where you are trying to implement a certain interface, you now get more cryptic messages where you are trying to use them.
@@ -179,6 +181,8 @@ You just implement the methods for a struct to satisfy an interface without bein
 There is no `map` and `reduce` and so on, but there's also no way to properly implement then without support for generic programming, through generics or otherwise.
 
 Instead, it seems people often cast things to `interface{}` to write generic code, then using type switches or reflection to "recover" from that. Or, just not write generic code.
+
+Go 1.18 will introduce generics, so soon not an issue anymore.
 
 ## No optional function parameters
 
