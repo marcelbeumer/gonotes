@@ -7,6 +7,7 @@ import (
 
 	"github.com/marcelbeumer/notes-in-go/notes/internal/note"
 	"github.com/marcelbeumer/notes-in-go/notes/internal/repo"
+	"github.com/marcelbeumer/notes-in-go/notes/internal/scrape"
 	flag "github.com/spf13/pflag"
 )
 
@@ -25,6 +26,7 @@ func main() {
 	newTitle := newCmd.String("title", "", "Title")
 	newHref := newCmd.String("href", "", "Href")
 	newTags := newCmd.StringArray("tag", make([]string, 0), "Tags")
+	shouldScrape := newCmd.Bool("scrape", false, "Scrape href")
 
 	syncCmd := flag.NewFlagSet("sync", flag.ExitOnError)
 
@@ -48,11 +50,26 @@ func main() {
 			errAndExit(err)
 		}
 		n := note.New()
-		if newTitle != nil && *newTitle != "" {
-			n.Title = newTitle
+
+		if *shouldScrape {
+			if newHref == nil || *newHref == "" {
+				errAndExit(errors.New("Can not scrape without href"))
+			}
+			scrapeRes, err := scrape.Scrape(*newHref)
+			if err != nil {
+				errAndExit(err)
+			}
+			n.Title = scrapeRes.Title
+			if scrapeRes.Description != nil {
+				n.Contents = *scrapeRes.Description
+			}
 		}
+
 		if newHref != nil && *newHref != "" {
 			n.Href = newHref
+		}
+		if newTitle != nil && *newTitle != "" {
+			n.Title = newTitle
 		}
 		if newTags != nil && len(*newTags) > 0 {
 			n.Tags = *newTags
