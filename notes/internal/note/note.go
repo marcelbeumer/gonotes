@@ -75,10 +75,20 @@ type Note struct {
 	Tags       []string
 }
 
+func getMetaLine(k string, v string) string {
+	o := make(map[string]string)
+	o[k] = v
+	s, err := yaml.Marshal(o)
+	if err == nil {
+		return string(s)
+	}
+	return ""
+}
+
 func (n *Note) Markdown() string {
 	md := "---\n"
 	if n.Title != nil && *n.Title != "" {
-		md += fmt.Sprintf("title: %s\n", *n.Title)
+		md += getMetaLine("title", *n.Title)
 	}
 	md += fmt.Sprintf("date: %s\n", serializeTime(&n.CreatedTs))
 	if n.ModifiedTs != nil {
@@ -88,7 +98,7 @@ func (n *Note) Markdown() string {
 		md += fmt.Sprintf("tags: %s\n", strings.Join(n.Tags, ", "))
 	}
 	if n.Href != nil && *n.Href != "" {
-		md += fmt.Sprintf("href: %s\n", *n.Href)
+		md += getMetaLine("href", *n.Href)
 	}
 	md += "---\n"
 	md += n.Contents
