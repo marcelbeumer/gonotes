@@ -1,6 +1,9 @@
 package scrape
 
 import (
+	"regexp"
+	"strings"
+
 	"github.com/gocolly/colly/v2"
 )
 
@@ -19,7 +22,16 @@ func Scrape(href string) (Result, error) {
 		}
 		title := e.Text
 		if title != "" {
-			r.Title = &title
+			cleanTitle := title
+			re := regexp.MustCompile(`(\n|\r)`)
+			cleanTitle = re.ReplaceAllString(cleanTitle, "")
+			re = regexp.MustCompile(`(\s{2,})`)
+			cleanTitle = re.ReplaceAllString(cleanTitle, " ")
+			cleanTitle = strings.TrimSpace(cleanTitle)
+			if len(cleanTitle) > 60 {
+				cleanTitle = cleanTitle[0:57] + "..."
+			}
+			r.Title = &cleanTitle
 		}
 	})
 
