@@ -359,6 +359,7 @@ func (r *Repo) loadNoteFromPath(path string) (*note.Note, error) {
 	}
 	n, err := note.FromPath(path)
 	if err != nil {
+		err := fmt.Errorf(`Could not load note from path "%s": %v`, path, err.Error())
 		return new(note.Note), err
 	}
 	newRecord := record{note: n, path: &absPath}
