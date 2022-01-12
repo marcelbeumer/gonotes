@@ -12,6 +12,7 @@ import (
 	"sync"
 
 	"github.com/bmatcuk/doublestar/v4"
+	"github.com/marcelbeumer/notes-in-go/notes/internal/log"
 	"github.com/marcelbeumer/notes-in-go/notes/internal/note"
 	"golang.org/x/sync/errgroup"
 )
@@ -61,14 +62,6 @@ func slugify(v string) string {
 	res = trailingSlash.ReplaceAllString(res, "")
 	res = leadingSlash.ReplaceAllString(res, "")
 	return res
-}
-
-func logStderr(msg string) {
-	fmt.Fprint(os.Stderr, msg)
-}
-
-func logfStderr(format string, a ...interface{}) {
-	fmt.Fprintf(os.Stderr, format, a...)
 }
 
 type Repo struct {
@@ -154,7 +147,7 @@ func (r *Repo) LoadNotes() error {
 
 	r.loadingState = Loaded
 
-	logStderr(fmt.Sprintf("Loaded %d notes\n", len(r.records)))
+	log.Stderr(fmt.Sprintf("Loaded %d notes\n", len(r.records)))
 
 	return nil
 }
@@ -216,7 +209,7 @@ func (r *Repo) Sync(newOnly bool, silent bool) error {
 	doneSize := 0
 
 	if !silent {
-		logfStderr("Syncing %d notes per job\n", sliceSize)
+		log.Fstderr("Syncing %d notes per job\n", sliceSize)
 	}
 
 	for i := 0; i <= concurCount; i++ {
@@ -236,7 +229,7 @@ func (r *Repo) Sync(newOnly bool, silent bool) error {
 		doneSize += len(slice)
 
 		if !silent {
-			logfStderr("Syncing %d/%d notes in job #%d\n", len(slice), len(allRecords), i)
+			log.Fstderr("Syncing %d/%d notes in job #%d\n", len(slice), len(allRecords), i)
 		}
 
 		g.Go(func() error {
@@ -254,7 +247,7 @@ func (r *Repo) Sync(newOnly bool, silent bool) error {
 	}
 
 	if !silent {
-		logfStderr("Synced %d/%d notes\n", doneSize, len(allRecords))
+		log.Fstderr("Synced %d/%d notes\n", doneSize, len(allRecords))
 	}
 
 	return nil
@@ -320,6 +313,21 @@ func (r *Repo) PathIfStored(note *note.Note) (string, error) {
 		}
 	}
 	return "", errors.New("Note not found")
+}
+
+func (r *Repo) LastStoredPath() (path string, err error) {
+	var latest *record
+	for _, record := range r.records {
+		if record != nil && record.path != nil {
+			if latest == nil || latest.note.CreatedTs.UnixNano() < record.note.CreatedTs.UnixNano() {
+				latest = record
+			}
+		}
+	}
+	if latest != nil {
+		return *latest.path, nil
+	}
+	return "", errors.New("No note found")
 }
 
 func (r *Repo) notePath(note *note.Note) (string, error) {
