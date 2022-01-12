@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"os"
 
+	"github.com/marcelbeumer/notes-in-go/notes/internal/log"
 	"github.com/marcelbeumer/notes-in-go/notes/internal/note"
 	"github.com/marcelbeumer/notes-in-go/notes/internal/repo"
 	"github.com/marcelbeumer/notes-in-go/notes/internal/scrape"
@@ -33,6 +34,8 @@ func main() {
 	renameTagCmd := flag.NewFlagSet("rename-tag", flag.ExitOnError)
 	renameFrom := renameTagCmd.String("from", "", "Where to rename from, ex: foo/bar")
 	renameTo := renameTagCmd.String("to", "", "Where to rename to, ex: something/else")
+
+	lastCmd := flag.NewFlagSet("last", flag.ExitOnError)
 
 	r := repo.New()
 	err := r.CheckDir()
@@ -122,6 +125,20 @@ func main() {
 		err = r.Sync(false, false)
 		if err != nil {
 			errAndExit(err)
+		}
+	case "last":
+		if err := lastCmd.Parse(os.Args[2:]); err != nil {
+			errAndExit(err)
+		}
+		if err := r.LoadNotes(); err != nil {
+			errAndExit(err)
+		}
+		last, err := r.LastStoredPath()
+		if err != nil {
+			errAndExit(err)
+		} else {
+			log.Fstderr("Found last note")
+			fmt.Println(last)
 		}
 	default:
 		printHelpAndExit()
