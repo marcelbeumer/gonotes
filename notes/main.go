@@ -137,7 +137,7 @@ func main() {
 		if err != nil {
 			errAndExit(err)
 		} else {
-			log.Fstderr("Found last note")
+			log.Stderrln("Found last note")
 			fmt.Println(last)
 		}
 	default:
