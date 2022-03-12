@@ -5,7 +5,7 @@ I made [some notes](./about_go.md) on my first experiences writing Go.
 
 # Setup
 
-- `go install github.com/marcelbeumer/notes-in-go/notes@latest`
+- `go install github.com/marcelbeumer/notes-in-go/notes@v0.3.1`
 - `mkdir my_notes_folder`
 - `cd my_notes_folder`
 - `touch .is_notes_root`
