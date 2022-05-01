@@ -5,10 +5,10 @@ import (
 	"fmt"
 	"os"
 
-	"github.com/marcelbeumer/notes/internal/log"
-	"github.com/marcelbeumer/notes/internal/note"
-	"github.com/marcelbeumer/notes/internal/repo"
-	"github.com/marcelbeumer/notes/internal/scrape"
+	"github.com/marcelbeumer/gonotes/internal/log"
+	"github.com/marcelbeumer/gonotes/internal/note"
+	"github.com/marcelbeumer/gonotes/internal/repo"
+	"github.com/marcelbeumer/gonotes/internal/scrape"
 	flag "github.com/spf13/pflag"
 )
 

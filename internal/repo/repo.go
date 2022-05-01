@@ -12,8 +12,8 @@ import (
 	"sync"
 
 	"github.com/bmatcuk/doublestar/v4"
-	"github.com/marcelbeumer/notes/internal/log"
-	"github.com/marcelbeumer/notes/internal/note"
+	"github.com/marcelbeumer/gonotes/internal/log"
+	"github.com/marcelbeumer/gonotes/internal/note"
 	"golang.org/x/sync/errgroup"
 )
 
