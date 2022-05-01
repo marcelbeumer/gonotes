@@ -1,18 +1,18 @@
-# notes-in-go
+# gonotes
 
-Port of personal notes system from TS to Go, for learning purposes.  
-I made [some notes](./about_go.md) on my first experiences writing Go.
+Personal notes system written in Go. Port of older tool written in TypeScript.
 
-# Setup
+# Install
 
-- `go install github.com/marcelbeumer/notes-in-go/notes@v0.3.1`
-- `mkdir my_notes_folder`
-- `cd my_notes_folder`
-- `touch .is_notes_root`
+- `go install github.com/marcelbeumer/gonotes@v1.0.0`
 
 # Usage
 
-- `notes new --title "Example note" --tag topic/subtopic --tag special`
-- `notes sync`
-
-See source for details
+- `mkdir notes`
+- `cd notes`
+- `touch .is_gonotes_root`
+- `gonotes new --title "Example note" --tag topic/subtopic --tag special`
+- `gonotes new --tag bookmark/go --href="https://go.dev" --scrape`
+- `gonotes rename-tag --from bookmark/go --to bookmark/dev`
+- `gonotes last` to get last created note
+- `gonotes sync` when manually adding notes or changing metadata

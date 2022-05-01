@@ -5,10 +5,10 @@ import (
 	"fmt"
 	"os"
 
-	"github.com/marcelbeumer/notes-in-go/notes/internal/log"
-	"github.com/marcelbeumer/notes-in-go/notes/internal/note"
-	"github.com/marcelbeumer/notes-in-go/notes/internal/repo"
-	"github.com/marcelbeumer/notes-in-go/notes/internal/scrape"
+	"github.com/marcelbeumer/notes/internal/log"
+	"github.com/marcelbeumer/notes/internal/note"
+	"github.com/marcelbeumer/notes/internal/repo"
+	"github.com/marcelbeumer/notes/internal/scrape"
 	flag "github.com/spf13/pflag"
 )
 
@@ -56,7 +56,7 @@ func main() {
 
 		if *shouldScrape {
 			if newHref == nil || *newHref == "" {
-				errAndExit(errors.New("Can not scrape without href"))
+				errAndExit(errors.New("can not scrape without href"))
 			}
 			scrapeRes, err := scrape.Scrape(*newHref)
 			if err != nil {
@@ -112,12 +112,12 @@ func main() {
 		if renameFrom != nil {
 			from = *renameFrom
 		} else {
-			errAndExit(errors.New("Please provide \"from\""))
+			errAndExit(errors.New("please provide \"from\""))
 		}
 		if renameTo != nil {
 			to = *renameTo
 		} else {
-			errAndExit(errors.New("Please provide \"to\""))
+			errAndExit(errors.New("please provide \"to\""))
 		}
 		for _, note := range r.Notes() {
 			note.RenameTag(from, to)

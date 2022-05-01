@@ -12,8 +12,8 @@ import (
 	"sync"
 
 	"github.com/bmatcuk/doublestar/v4"
-	"github.com/marcelbeumer/notes-in-go/notes/internal/log"
-	"github.com/marcelbeumer/notes-in-go/notes/internal/note"
+	"github.com/marcelbeumer/notes/internal/log"
+	"github.com/marcelbeumer/notes/internal/note"
 	"golang.org/x/sync/errgroup"
 )
 
@@ -87,7 +87,7 @@ func (r *Repo) CheckDir() error {
 }
 
 func (r *Repo) rootDir() (string, error) {
-	dotfilename := ".is_notes_root"
+	dotfilename := ".is_gonotes_root"
 	cwd, err := os.Getwd()
 	if err != nil {
 		return cwd, err
@@ -95,7 +95,7 @@ func (r *Repo) rootDir() (string, error) {
 	_, err = os.Stat(path.Join(cwd, dotfilename))
 	exists := !errors.Is(err, os.ErrNotExist)
 	if !exists {
-		return cwd, fmt.Errorf("Could not find %s file", dotfilename)
+		return cwd, fmt.Errorf("could not find %s file", dotfilename)
 	}
 	return cwd, nil
 }
@@ -118,7 +118,7 @@ func (r *Repo) tagsDir() (string, error) {
 
 func (r *Repo) LoadNotes() error {
 	if r.loadingState == Loading {
-		return errors.New("Already loading")
+		return errors.New("already loading")
 	}
 	notesSrcDir, err := r.NotesSrcDir()
 	if err != nil {
@@ -127,7 +127,7 @@ func (r *Repo) LoadNotes() error {
 
 	globRes, err := doublestar.Glob(os.DirFS(notesSrcDir), "**/*md")
 	if err != nil {
-		return fmt.Errorf("Could not glob for notes: %v", err)
+		return fmt.Errorf("could not glob for notes: %v", err)
 	}
 
 	files := make([]string, 0)
@@ -279,7 +279,7 @@ func (r *Repo) syncRecord(record *record) error {
 	}
 	err = os.WriteFile(*record.path, []byte(md), 0644)
 	if err != nil {
-		return fmt.Errorf("Could not write note to %s: %v", *record.path, err)
+		return fmt.Errorf("could not write note to %s: %v", *record.path, err)
 	}
 
 	for _, tag := range record.note.Tags {
@@ -307,19 +307,20 @@ func (r *Repo) PathIfStored(note *note.Note) (string, error) {
 	for _, record := range r.records {
 		if record.note == note {
 			if record.path == nil {
-				return "", errors.New("Note found but not yet stored")
+				return "", errors.New("note found but not yet stored")
 			}
 			return *record.path, nil
 		}
 	}
-	return "", errors.New("Note not found")
+	return "", errors.New("note not found")
 }
 
 func (r *Repo) LastStoredPath() (path string, err error) {
 	var latest *record
 	for _, record := range r.records {
 		if record != nil && record.path != nil {
-			if latest == nil || latest.note.CreatedTs.UnixNano() < record.note.CreatedTs.UnixNano() {
+			if latest == nil ||
+				latest.note.CreatedTs.UnixNano() < record.note.CreatedTs.UnixNano() {
 				latest = record
 			}
 		}
@@ -327,7 +328,7 @@ func (r *Repo) LastStoredPath() (path string, err error) {
 	if latest != nil {
 		return *latest.path, nil
 	}
-	return "", errors.New("No note found")
+	return "", errors.New("no note found")
 }
 
 func (r *Repo) notePath(note *note.Note) (string, error) {
@@ -367,7 +368,7 @@ func (r *Repo) loadNoteFromPath(path string) (*note.Note, error) {
 	}
 	n, err := note.FromPath(path)
 	if err != nil {
-		err := fmt.Errorf(`Could not load note from path "%s": %v`, path, err.Error())
+		err := fmt.Errorf(`could not load note from path "%s": %v`, path, err.Error())
 		return new(note.Note), err
 	}
 	newRecord := record{note: n, path: &absPath}

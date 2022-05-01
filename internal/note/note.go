@@ -192,7 +192,7 @@ func FromReader(reader io.Reader) (*Note, error) {
 			s := v.String()
 			note.Title = &s
 		default:
-			return note, errors.New("Title not of correct type")
+			return note, errors.New("title not of correct type")
 		}
 	}
 
@@ -235,7 +235,7 @@ func FromString(string string) (*Note, error) {
 func FromPath(path string) (*Note, error) {
 	file, err := os.Open(path)
 	if err != nil {
-		return new(Note), fmt.Errorf("Could not open file %v: %v", path, err)
+		return new(Note), fmt.Errorf("could not open file %v: %v", path, err)
 	}
 	defer file.Close()
 	n, err := FromReader(file)

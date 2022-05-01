@@ -1,4 +1,4 @@
-module github.com/marcelbeumer/notes-in-go
+module github.com/marcelbeumer/notes
 
 go 1.17
 
