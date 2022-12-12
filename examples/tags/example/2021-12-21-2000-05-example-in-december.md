@@ -1,1 +1,0 @@
-/Users/robotx/g/notes/examples/notes/2021-12/2021-12-21-2000-05-example-in-december.md

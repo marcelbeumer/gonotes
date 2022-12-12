@@ -1,18 +1,34 @@
 # gonotes
 
-Personal notes system written in Go. Port of older tool written in TypeScript.
+Personal notes system written in Go.
 
-# Install
+## Features
 
-- `go install github.com/marcelbeumer/gonotes@v1.0.0`
+- Add notes, optionally with title, tags and/or href meta. (`gonotes new`)
+- Rename tags across all notes and update folder structures. (`gonotes rename-tag`)
+- Update filenames and folder structures after editing notes. (`gonotes sync`)
+- Print file path of last note created. (`gonotes last`)
+- List all notes in the repository. (`gonotes list`)
+- Print all tags with note count in tree format. (`gonotes tree`)
+- Print note contents, which equals file contents. (`gonotes show`)
 
-# Usage
+Upcoming features:
 
-- `mkdir notes`
-- `cd notes`
-- `touch .is_gonotes_root`
-- `gonotes new --title "Example note" --tag topic/subtopic --tag special`
-- `gonotes new --tag bookmark/go --href="https://go.dev" --scrape`
-- `gonotes rename-tag --from bookmark/go --to bookmark/dev`
-- `gonotes last` to get last created note
-- `gonotes sync` when manually adding notes or changing metadata
+- Asset management (images/pdfs/etc).
+- Database as alternative storage.
+- GraphQL server.
+
+## Install
+
+```bash
+go install github.com/marcelbeumer/gonotes/cmd/gonotes@latest
+```
+
+## Setup
+
+```bash
+mkdir mynotes
+cd mynotes
+touch .is_gonotes_root
+gonotes
+```
