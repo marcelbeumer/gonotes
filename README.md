@@ -17,6 +17,7 @@ Upcoming features:
 - Asset management (images/pdfs/etc).
 - Database as alternative storage.
 - GraphQL server.
+- Go API exposed.
 
 ## Install
 
