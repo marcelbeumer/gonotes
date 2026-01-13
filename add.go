@@ -15,6 +15,7 @@ package gonotes
 //
 // Add:
 // Create new metadata with date, title, tags, etc.
+// Read body from stdin.
 // Determine file path.
 // Serialize and write.
 // Stdout filepath.
@@ -27,3 +28,11 @@ package gonotes
 // Show: never used it
 // Last: was useful but never mind
 // Warnings and checks: now just rely on git
+
+//	func Add(ctx context.Context, frontmatter *Frontmatter, body io.Reader) error {
+//		return nil
+//	}
+//
+//	func Organize(ctx context.Context, l *slog.Logger, fs fs.FS) error {
+//		return nil
+//	}
