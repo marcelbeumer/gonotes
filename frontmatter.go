@@ -20,6 +20,9 @@ func init() {
 	}
 }
 
+// TODO: consider moving specifics for tags, date and title etc out of
+// frontmatter, that way frontmatter can stay generic.
+
 type Frontmatter struct {
 	yaml.Node
 }
