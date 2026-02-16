@@ -77,7 +77,7 @@ version: 2
 			}
 
 			for k, v := range tt.wantMap {
-				got, _ := f.Value(k)
+				got, _ := f.Get(k)
 				want := v
 				if got != want {
 					t.Errorf("Got %q, want %q", got, want)
