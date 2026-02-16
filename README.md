@@ -18,6 +18,9 @@ Personal notes system written in Go.
 - Readme with examples how to change tags with CLI tools like sed
 - No longer .is_gonotes_root, can just check notes/by/id existance or create that.
 - No tree command, no search things, we have the fs.
+- LSP goto definition (nice to have)
+- LSP rename (nice to have) (useful? renaming tags not so intuitive from a note itself)
+- LSP references (nice to have) (useful? we already have the filesystem structure)
 
 ## Code structure
 

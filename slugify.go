@@ -10,7 +10,7 @@ var (
 	reMultiDash           = regexp.MustCompile("-{2,}")
 )
 
-func Slugify(v string) string {
+func slugify(v string) string {
 	res := strings.TrimSpace(strings.ToLower(v))
 	res = reDisallowedSlugChars.ReplaceAllString(res, "-")
 	res = reMultiDash.ReplaceAllString(res, "-")
