@@ -1,5 +1,43 @@
 package gonotes
 
+import (
+	"io"
+)
+
+type Note struct {
+	Frontmatter   *Frontmatter
+	ID            string
+	Title         string
+	Slug          string
+	Tags          []string
+	Body          string
+	InternalLinks []string
+}
+
+func NewNote() *Note {
+	return &Note{
+		Frontmatter: NewFrontmatter(),
+	}
+}
+
+func ReadNote(id string, r io.Reader) *Note {
+	// Read line by line
+	// If first line is document sep, ignore it
+	// Read frontmatter string until document sep
+	// If document separator, read rest as body
+	// Parse first document as frontmatter
+	// Take title from frontmatter
+	// Generate slug from title
+	// Get tags from frontmatter
+	// Set body
+	// Set id from func param
+	return nil
+}
+
+func (n *Note) Markdown() string {
+	return ""
+}
+
 // var loc *time.Location
 //
 // func init() {
