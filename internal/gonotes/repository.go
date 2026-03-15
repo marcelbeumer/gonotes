@@ -83,8 +83,8 @@ func (r *Repository) LoadNotes() error {
 	var wg sync.WaitGroup
 	var errs []error
 	var job []jobEntry
-	var noteCount = len(r.notePaths)
-	var jobSize = int(math.Ceil(float64(noteCount) / 5))
+	noteCount := len(r.notePaths)
+	jobSize := int(math.Ceil(float64(noteCount) / 5))
 
 	addError := func(err error) {
 		mu.Lock()
@@ -105,6 +105,7 @@ func (r *Repository) LoadNotes() error {
 			for _, entry := range jobSlice {
 				n, err := LoadNoteFromDisk(entry.filePath)
 				if err != nil {
+					err := fmt.Errorf("load note %q: %w", entry.filePath, err)
 					addError(err)
 					return // end job; forget about other entries
 				}
@@ -113,7 +114,7 @@ func (r *Repository) LoadNotes() error {
 		}()
 	}
 
-	var doneCount = 0
+	doneCount := 0
 	for name, filePath := range r.notePaths {
 		name := name
 		filePath := filePath
