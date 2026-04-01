@@ -1,11 +1,14 @@
 package main
 
 import (
+	"bufio"
+	"errors"
 	"flag"
 	"fmt"
 	"io"
 	"os"
 	"path/filepath"
+	"strings"
 	"time"
 
 	gonotes "github.com/marcelbeumer/gonotes"
@@ -17,6 +20,7 @@ Commands:
   id         Print the next available note ID
   new        Create a new note
   prepare    Prepare a note: merge frontmatter fields, output to stdout
+  rebuild    Scan notes, report issues, rename files, rebuild symlinks
 `
 
 func main() {
@@ -25,25 +29,27 @@ func main() {
 		os.Exit(1)
 	}
 
+	var err error
 	switch os.Args[1] {
 	case "id":
-		if err := runID(); err != nil {
-			fmt.Fprintf(os.Stderr, "error: %v\n", err)
-			os.Exit(1)
-		}
+		err = runID()
 	case "new":
-		if err := runNew(os.Args[2:]); err != nil {
-			fmt.Fprintf(os.Stderr, "error: %v\n", err)
-			os.Exit(1)
-		}
+		err = runNew(os.Args[2:])
 	case "prepare":
-		if err := runPrepare(os.Args[2:]); err != nil {
-			fmt.Fprintf(os.Stderr, "error: %v\n", err)
-			os.Exit(1)
-		}
+		err = runPrepare(os.Args[2:])
+	case "rebuild":
+		err = runRebuild(os.Args[2:])
 	default:
 		fmt.Fprintf(os.Stderr, "unknown command: %s\n", os.Args[1])
 		fmt.Fprint(os.Stderr, usage)
+		os.Exit(1)
+	}
+
+	if err != nil {
+		if errors.Is(err, flag.ErrHelp) {
+			os.Exit(0)
+		}
+		fmt.Fprintf(os.Stderr, "error: %v\n", err)
 		os.Exit(1)
 	}
 }
@@ -268,4 +274,76 @@ func runID() error {
 
 	fmt.Fprintln(os.Stdout, id)
 	return nil
+}
+
+func runRebuild(args []string) error {
+	fs := flag.NewFlagSet("rebuild", flag.ContinueOnError)
+	confirm := fs.Bool("y", false, "skip confirmation prompts")
+
+	fs.Usage = func() {
+		fmt.Fprintf(os.Stderr, `Usage: gonotes2 rebuild [-y]
+
+Scan notes/by/id/, report broken links and filename mismatches,
+rename files, and rebuild symlink structures.
+
+Flags:
+`)
+		fs.PrintDefaults()
+	}
+
+	if err := fs.Parse(args); err != nil {
+		return err
+	}
+
+	baseDir, err := os.Getwd()
+	if err != nil {
+		return fmt.Errorf("get working directory: %w", err)
+	}
+
+	idDir := filepath.Join(baseDir, "notes", "by", "id")
+
+	// Phase 1: Scan and report.
+	report, err := gonotes.ScanNotes(idDir)
+	if err != nil {
+		return err
+	}
+
+	fmt.Fprint(os.Stderr, report.String())
+
+	// Phase 2: Renames.
+	if len(report.Renames) > 0 {
+		if !*confirm && !promptYN("Perform renames?") {
+			fmt.Fprintln(os.Stderr, "Skipping renames.")
+		} else {
+			if err := gonotes.ExecuteRenames(idDir, report.Renames); err != nil {
+				return err
+			}
+			fmt.Fprintf(os.Stderr, "Renamed %d file(s).\n", len(report.Renames))
+		}
+	}
+
+	// Phase 3: Rebuild symlinks.
+	if !*confirm && !promptYN("Rebuild symlinks?") {
+		fmt.Fprintln(os.Stderr, "Skipping symlink rebuild.")
+		return nil
+	}
+
+	if err := gonotes.RebuildSymlinks(baseDir); err != nil {
+		return err
+	}
+	fmt.Fprintln(os.Stderr, "Symlinks rebuilt.")
+
+	return nil
+}
+
+var stdinScanner = bufio.NewScanner(os.Stdin)
+
+// promptYN prints a question to stderr and reads a y/n answer from stdin.
+func promptYN(question string) bool {
+	fmt.Fprintf(os.Stderr, "%s [y/N] ", question)
+	if !stdinScanner.Scan() {
+		return false
+	}
+	ans := strings.TrimSpace(strings.ToLower(stdinScanner.Text()))
+	return ans == "y" || ans == "yes"
 }

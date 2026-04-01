@@ -7,6 +7,7 @@ import (
 	"os"
 	"path/filepath"
 	"regexp"
+	"sort"
 	"strconv"
 	"strings"
 	"time"
@@ -232,4 +233,239 @@ func CreateNote(baseDir string, r io.Reader, opts PrepareOptions, id string, dry
 	}
 
 	return note, plan, nil
+}
+
+// IDFromFilename extracts the note ID from a filename like "20260328-1-hello.md".
+// Returns the ID and true, or empty string and false if the filename doesn't match.
+func IDFromFilename(name string) (string, bool) {
+	m := reIDPrefix.FindStringSubmatch(name)
+	if m == nil {
+		return "", false
+	}
+	return m[1] + "-" + m[2], true
+}
+
+// BrokenLink records an internal link that references a non-existent note.
+type BrokenLink struct {
+	SourceID string
+	TargetID string
+}
+
+// Rename records a file that should be renamed to match its title slug.
+type Rename struct {
+	OldName string // current filename
+	NewName string // correct filename based on id + slug
+}
+
+// RebuildReport holds the results of scanning notes/by/id/.
+type RebuildReport struct {
+	BrokenLinks []BrokenLink
+	Renames     []Rename
+}
+
+// String returns a human-readable summary of the report.
+func (r *RebuildReport) String() string {
+	var b strings.Builder
+
+	if len(r.BrokenLinks) > 0 {
+		fmt.Fprintf(&b, "Broken links (%d):\n", len(r.BrokenLinks))
+		for _, bl := range r.BrokenLinks {
+			fmt.Fprintf(&b, "  %s -> %s\n", bl.SourceID, bl.TargetID)
+		}
+	}
+
+	if len(r.Renames) > 0 {
+		fmt.Fprintf(&b, "Renames (%d):\n", len(r.Renames))
+		for _, rn := range r.Renames {
+			fmt.Fprintf(&b, "  %s -> %s\n", rn.OldName, rn.NewName)
+		}
+	}
+
+	if len(r.BrokenLinks) == 0 && len(r.Renames) == 0 {
+		b.WriteString("No issues found.\n")
+	}
+
+	return b.String()
+}
+
+// ScanNotes reads notes/by/id/ one file at a time and produces a report of
+// broken internal links and filenames that need renaming.
+func ScanNotes(idDir string) (*RebuildReport, error) {
+	f, err := os.Open(idDir)
+	if err != nil {
+		return nil, fmt.Errorf("scan notes: %w", err)
+	}
+	defer f.Close()
+
+	// First pass: collect all IDs, current filenames, correct filenames, and links.
+	type noteInfo struct {
+		id            string
+		currentName   string
+		correctName   string
+		internalLinks []string
+	}
+
+	var notes []noteInfo
+
+	for {
+		entries, err := f.ReadDir(readDirBatch)
+		for _, e := range entries {
+			if e.IsDir() {
+				continue
+			}
+			name := e.Name()
+			if !strings.HasSuffix(name, ".md") {
+				continue
+			}
+
+			id, ok := IDFromFilename(name)
+			if !ok {
+				continue
+			}
+
+			path := filepath.Join(idDir, name)
+			nf, err := os.Open(path)
+			if err != nil {
+				return nil, fmt.Errorf("scan notes: open %s: %w", name, err)
+			}
+
+			note, err := ReadNote(id, nf)
+			nf.Close()
+			if err != nil {
+				return nil, fmt.Errorf("scan notes: read %s: %w", name, err)
+			}
+
+			notes = append(notes, noteInfo{
+				id:            id,
+				currentName:   name,
+				correctName:   NoteFilename(id, note.Slug),
+				internalLinks: note.InternalLinks,
+			})
+		}
+		if err != nil {
+			if errors.Is(err, io.EOF) {
+				break
+			}
+			return nil, fmt.Errorf("scan notes: read dir: %w", err)
+		}
+	}
+
+	// Build set of known IDs.
+	idSet := make(map[string]struct{}, len(notes))
+	for _, n := range notes {
+		idSet[n.id] = struct{}{}
+	}
+
+	// Sort for deterministic output.
+	sort.Slice(notes, func(i, j int) bool {
+		return notes[i].id < notes[j].id
+	})
+
+	report := &RebuildReport{}
+
+	for _, n := range notes {
+		// Check for broken links.
+		for _, target := range n.internalLinks {
+			// The target may be just an ID or may have extra text; try to
+			// extract an ID from it.
+			targetID, ok := IDFromFilename(target)
+			if !ok {
+				// Treat the raw target as an ID.
+				targetID = target
+			}
+			if _, exists := idSet[targetID]; !exists {
+				report.BrokenLinks = append(report.BrokenLinks, BrokenLink{
+					SourceID: n.id,
+					TargetID: targetID,
+				})
+			}
+		}
+
+		// Check for renames.
+		if n.currentName != n.correctName {
+			report.Renames = append(report.Renames, Rename{
+				OldName: n.currentName,
+				NewName: n.correctName,
+			})
+		}
+	}
+
+	return report, nil
+}
+
+// ExecuteRenames performs the file renames in idDir.
+func ExecuteRenames(idDir string, renames []Rename) error {
+	for _, rn := range renames {
+		oldPath := filepath.Join(idDir, rn.OldName)
+		newPath := filepath.Join(idDir, rn.NewName)
+		if err := os.Rename(oldPath, newPath); err != nil {
+			return fmt.Errorf("rename %s -> %s: %w", rn.OldName, rn.NewName, err)
+		}
+	}
+	return nil
+}
+
+// RebuildSymlinks deletes notes/by/date and notes/by/tags, then re-scans
+// notes/by/id and creates all symlinks from scratch.
+func RebuildSymlinks(baseDir string) error {
+	byDir := filepath.Join(baseDir, "notes", "by")
+	idDir := filepath.Join(byDir, "id")
+
+	// Delete existing symlink directories.
+	for _, dir := range []string{"date", "tags"} {
+		p := filepath.Join(byDir, dir)
+		if err := os.RemoveAll(p); err != nil {
+			return fmt.Errorf("rebuild symlinks: remove %s: %w", dir, err)
+		}
+	}
+
+	// Re-scan and create symlinks, one file at a time.
+	f, err := os.Open(idDir)
+	if err != nil {
+		return fmt.Errorf("rebuild symlinks: %w", err)
+	}
+	defer f.Close()
+
+	for {
+		entries, err := f.ReadDir(readDirBatch)
+		for _, e := range entries {
+			if e.IsDir() {
+				continue
+			}
+			name := e.Name()
+			if !strings.HasSuffix(name, ".md") {
+				continue
+			}
+
+			id, ok := IDFromFilename(name)
+			if !ok {
+				continue
+			}
+
+			path := filepath.Join(idDir, name)
+			nf, err := os.Open(path)
+			if err != nil {
+				return fmt.Errorf("rebuild symlinks: open %s: %w", name, err)
+			}
+
+			note, err := ReadNote(id, nf)
+			nf.Close()
+			if err != nil {
+				return fmt.Errorf("rebuild symlinks: read %s: %w", name, err)
+			}
+
+			plan := NotePlan(note)
+			if err := plan.Execute(baseDir); err != nil {
+				return fmt.Errorf("rebuild symlinks: %w", err)
+			}
+		}
+		if err != nil {
+			if errors.Is(err, io.EOF) {
+				break
+			}
+			return fmt.Errorf("rebuild symlinks: read dir: %w", err)
+		}
+	}
+
+	return nil
 }

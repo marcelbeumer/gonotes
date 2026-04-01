@@ -470,3 +470,279 @@ func TestCreateNoteSequentialIDs(t *testing.T) {
 		t.Errorf("second ID = %q, want %q", note2.ID, "20260328-2")
 	}
 }
+
+func TestIDFromFilename(t *testing.T) {
+	tests := []struct {
+		name   string
+		input  string
+		wantID string
+		wantOK bool
+	}{
+		{"with slug", "20260328-1-hello-world.md", "20260328-1", true},
+		{"no slug", "20260328-1.md", "20260328-1", true},
+		{"large num", "20260328-42-foo.md", "20260328-42", true},
+		{"not a note", "readme.txt", "", false},
+		{"hidden file", ".hidden", "", false},
+		{"bad format", "notes-abc.md", "", false},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			id, ok := IDFromFilename(tt.input)
+			if ok != tt.wantOK {
+				t.Errorf("IDFromFilename(%q) ok = %v, want %v", tt.input, ok, tt.wantOK)
+			}
+			if id != tt.wantID {
+				t.Errorf("IDFromFilename(%q) = %q, want %q", tt.input, id, tt.wantID)
+			}
+		})
+	}
+}
+
+// writeTestNote is a helper that writes a note file directly to a directory.
+func writeTestNote(t *testing.T, dir, filename, content string) {
+	t.Helper()
+	if err := os.MkdirAll(dir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(dir, filename), []byte(content), 0o644); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func TestScanNotes(t *testing.T) {
+	baseDir := t.TempDir()
+	idDir := filepath.Join(baseDir, "notes", "by", "id")
+
+	// Note 1: correct filename, links to note 2 (exists) and note 99 (doesn't exist).
+	writeTestNote(t, idDir, "20260328-1-hello.md", `---
+title: Hello
+date: 2026-03-28 14:30:00
+---
+
+See [[20260328-2]] and [[20260328-99]].`)
+
+	// Note 2: wrong filename (slug doesn't match title).
+	writeTestNote(t, idDir, "20260328-2-old-name.md", `---
+title: New Name
+date: 2026-03-28 15:00:00
+---
+
+Links to [[20260328-1]].`)
+
+	// Note 3: no title, no links.
+	writeTestNote(t, idDir, "20260328-3.md", `---
+date: 2026-03-28 16:00:00
+---
+
+Plain note.`)
+
+	report, err := ScanNotes(idDir)
+	if err != nil {
+		t.Fatalf("ScanNotes() err = %q", err)
+	}
+
+	// Check broken links: only 20260328-99 should be broken.
+	if len(report.BrokenLinks) != 1 {
+		t.Errorf("expected 1 broken link, got %d: %v", len(report.BrokenLinks), report.BrokenLinks)
+	} else {
+		bl := report.BrokenLinks[0]
+		if bl.SourceID != "20260328-1" || bl.TargetID != "20260328-99" {
+			t.Errorf("broken link = %v, want {20260328-1 -> 20260328-99}", bl)
+		}
+	}
+
+	// Check renames: note 2 should be renamed.
+	if len(report.Renames) != 1 {
+		t.Errorf("expected 1 rename, got %d: %v", len(report.Renames), report.Renames)
+	} else {
+		rn := report.Renames[0]
+		if rn.OldName != "20260328-2-old-name.md" || rn.NewName != "20260328-2-new-name.md" {
+			t.Errorf("rename = %v, want {20260328-2-old-name.md -> 20260328-2-new-name.md}", rn)
+		}
+	}
+}
+
+func TestScanNotesNoIssues(t *testing.T) {
+	baseDir := t.TempDir()
+	idDir := filepath.Join(baseDir, "notes", "by", "id")
+
+	writeTestNote(t, idDir, "20260328-1-hello.md", `---
+title: Hello
+---
+
+No links.`)
+
+	report, err := ScanNotes(idDir)
+	if err != nil {
+		t.Fatalf("ScanNotes() err = %q", err)
+	}
+
+	if len(report.BrokenLinks) != 0 {
+		t.Errorf("expected 0 broken links, got %d", len(report.BrokenLinks))
+	}
+	if len(report.Renames) != 0 {
+		t.Errorf("expected 0 renames, got %d", len(report.Renames))
+	}
+}
+
+func TestExecuteRenames(t *testing.T) {
+	dir := t.TempDir()
+
+	writeTestNote(t, dir, "20260328-1-old.md", "content1")
+	writeTestNote(t, dir, "20260328-2-wrong.md", "content2")
+
+	renames := []Rename{
+		{OldName: "20260328-1-old.md", NewName: "20260328-1-new.md"},
+		{OldName: "20260328-2-wrong.md", NewName: "20260328-2-right.md"},
+	}
+
+	if err := ExecuteRenames(dir, renames); err != nil {
+		t.Fatalf("ExecuteRenames() err = %q", err)
+	}
+
+	// Old names should not exist.
+	for _, rn := range renames {
+		if _, err := os.Stat(filepath.Join(dir, rn.OldName)); !os.IsNotExist(err) {
+			t.Errorf("old file %s still exists", rn.OldName)
+		}
+	}
+
+	// New names should exist with correct content.
+	content1, _ := os.ReadFile(filepath.Join(dir, "20260328-1-new.md"))
+	if string(content1) != "content1" {
+		t.Errorf("renamed file content = %q, want %q", content1, "content1")
+	}
+	content2, _ := os.ReadFile(filepath.Join(dir, "20260328-2-right.md"))
+	if string(content2) != "content2" {
+		t.Errorf("renamed file content = %q, want %q", content2, "content2")
+	}
+}
+
+func TestRebuildSymlinks(t *testing.T) {
+	baseDir := t.TempDir()
+	idDir := filepath.Join(baseDir, "notes", "by", "id")
+
+	// Create two notes.
+	writeTestNote(t, idDir, "20260328-1-hello.md", `---
+title: Hello
+date: 2026-03-28 14:30:00
+tags: foo/bar, plain
+---
+
+Body.`)
+
+	writeTestNote(t, idDir, "20260328-2-world.md", `---
+title: World
+date: 2026-03-29 10:00:00
+tags: other
+---
+
+Body.`)
+
+	// Create stale symlink dirs (should be deleted).
+	staleDir := filepath.Join(baseDir, "notes", "by", "tags", "flat", "stale")
+	if err := os.MkdirAll(staleDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+
+	if err := RebuildSymlinks(baseDir); err != nil {
+		t.Fatalf("RebuildSymlinks() err = %q", err)
+	}
+
+	// Stale dir should be gone.
+	if _, err := os.Stat(staleDir); !os.IsNotExist(err) {
+		t.Error("stale tag directory still exists after rebuild")
+	}
+
+	// Check expected symlinks exist and resolve.
+	wantLinks := []struct {
+		link   string
+		target string // the note filename it should resolve to
+	}{
+		{"notes/by/date/2026-03-28/20260328-1-hello.md", "20260328-1-hello.md"},
+		{"notes/by/date/2026-03-29/20260328-2-world.md", "20260328-2-world.md"},
+		{"notes/by/tags/nested/foo/bar/20260328-1-hello.md", "20260328-1-hello.md"},
+		{"notes/by/tags/nested/plain/20260328-1-hello.md", "20260328-1-hello.md"},
+		{"notes/by/tags/flat/foo/20260328-1-hello.md", "20260328-1-hello.md"},
+		{"notes/by/tags/flat/bar/20260328-1-hello.md", "20260328-1-hello.md"},
+		{"notes/by/tags/flat/plain/20260328-1-hello.md", "20260328-1-hello.md"},
+		{"notes/by/tags/nested/other/20260328-2-world.md", "20260328-2-world.md"},
+		{"notes/by/tags/flat/other/20260328-2-world.md", "20260328-2-world.md"},
+	}
+
+	for _, wl := range wantLinks {
+		absLink := filepath.Join(baseDir, wl.link)
+		resolved, err := filepath.EvalSymlinks(absLink)
+		if err != nil {
+			t.Errorf("symlink %s cannot be resolved: %v", wl.link, err)
+			continue
+		}
+		wantTarget := filepath.Join(idDir, wl.target)
+		if resolved != wantTarget {
+			t.Errorf("symlink %s resolves to %q, want %q", wl.link, resolved, wantTarget)
+		}
+	}
+}
+
+func TestRebuildSymlinksIdempotent(t *testing.T) {
+	baseDir := t.TempDir()
+	idDir := filepath.Join(baseDir, "notes", "by", "id")
+
+	writeTestNote(t, idDir, "20260328-1-hello.md", `---
+title: Hello
+date: 2026-03-28 14:30:00
+tags: test
+---`)
+
+	// First rebuild.
+	if err := RebuildSymlinks(baseDir); err != nil {
+		t.Fatalf("first RebuildSymlinks() err = %q", err)
+	}
+
+	// Second rebuild should also succeed (deletes old, creates new).
+	if err := RebuildSymlinks(baseDir); err != nil {
+		t.Fatalf("second RebuildSymlinks() err = %q", err)
+	}
+
+	// Symlink should still work.
+	link := filepath.Join(baseDir, "notes", "by", "date", "2026-03-28", "20260328-1-hello.md")
+	resolved, err := filepath.EvalSymlinks(link)
+	if err != nil {
+		t.Fatalf("symlink cannot be resolved after second rebuild: %v", err)
+	}
+	wantTarget := filepath.Join(idDir, "20260328-1-hello.md")
+	if resolved != wantTarget {
+		t.Errorf("symlink resolves to %q, want %q", resolved, wantTarget)
+	}
+}
+
+func TestRebuildReportString(t *testing.T) {
+	t.Run("no issues", func(t *testing.T) {
+		r := &RebuildReport{}
+		got := r.String()
+		if got != "No issues found.\n" {
+			t.Errorf("String() = %q, want %q", got, "No issues found.\n")
+		}
+	})
+
+	t.Run("with issues", func(t *testing.T) {
+		r := &RebuildReport{
+			BrokenLinks: []BrokenLink{{SourceID: "a", TargetID: "b"}},
+			Renames:     []Rename{{OldName: "old.md", NewName: "new.md"}},
+		}
+		got := r.String()
+		if !strings.Contains(got, "Broken links (1)") {
+			t.Errorf("String() missing broken links header")
+		}
+		if !strings.Contains(got, "a -> b") {
+			t.Errorf("String() missing broken link entry")
+		}
+		if !strings.Contains(got, "Renames (1)") {
+			t.Errorf("String() missing renames header")
+		}
+		if !strings.Contains(got, "old.md -> new.md") {
+			t.Errorf("String() missing rename entry")
+		}
+	})
+}
