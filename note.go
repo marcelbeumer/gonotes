@@ -1,8 +1,18 @@
 package gonotes
 
 import (
+	"bufio"
+	"fmt"
 	"io"
+	"regexp"
+	"strings"
+
+	"gopkg.in/yaml.v3"
 )
+
+var reWikiLink = regexp.MustCompile(`\[\[([^\]]+)\]\]`)
+
+const frontmatterSep = "---"
 
 type Note struct {
 	Frontmatter   *Frontmatter
@@ -20,101 +30,133 @@ func NewNote() *Note {
 	}
 }
 
-func ReadNote(id string, r io.Reader) *Note {
-	// Read line by line
-	// If first line is document sep, ignore it
-	// Read frontmatter string until document sep
-	// If document separator, read rest as body
-	// Parse first document as frontmatter
-	// Take title from frontmatter
-	// Generate slug from title
-	// Get tags from frontmatter
-	// Set body
-	// Set id from func param
-	return nil
+// ReadNote parses a markdown note with optional YAML frontmatter from r.
+// The id is set directly from the parameter and is not parsed from content.
+func ReadNote(id string, r io.Reader) (*Note, error) {
+	fm, body, err := splitFrontmatterBody(r)
+	if err != nil {
+		return nil, fmt.Errorf("read note: %w", err)
+	}
+
+	note := &Note{
+		Frontmatter: NewFrontmatter(),
+		ID:          id,
+		Body:        body,
+	}
+
+	// Parse frontmatter if present.
+	if fm != "" {
+		if err := yaml.Unmarshal([]byte(fm), note.Frontmatter); err != nil {
+			return nil, fmt.Errorf("read note: unmarshal frontmatter: %w", err)
+		}
+	}
+
+	// Extract recognized fields.
+	if title, ok := note.Frontmatter.Get("title"); ok {
+		note.Title = title
+		note.Slug = slugify(title)
+	}
+
+	if tags, ok := note.Frontmatter.Get("tags"); ok {
+		note.Tags = parseTags(tags)
+	}
+
+	note.InternalLinks = parseInternalLinks(body)
+
+	return note, nil
 }
 
+// splitFrontmatterBody reads from r and separates the YAML frontmatter from
+// the body. The frontmatter delimiters (---) are not included in either part.
+// If there is no opening delimiter on the first line, everything is body.
+func splitFrontmatterBody(r io.Reader) (fm string, body string, err error) {
+	scanner := bufio.NewScanner(r)
+
+	var fmLines []string
+	var bodyLines []string
+	sepCount := 0
+	lineNum := 0
+
+	for scanner.Scan() {
+		line := scanner.Text()
+		lineNum++
+
+		if sepCount < 2 && line == frontmatterSep {
+			sepCount++
+			continue
+		}
+
+		switch {
+		case sepCount == 1:
+			// Between first and second ---, this is frontmatter.
+			fmLines = append(fmLines, line)
+		default:
+			// Before first --- or after second ---, this is body.
+			bodyLines = append(bodyLines, line)
+		}
+	}
+
+	if err := scanner.Err(); err != nil {
+		return "", "", err
+	}
+
+	fm = strings.Join(fmLines, "\n")
+	body = strings.Join(bodyLines, "\n")
+	return fm, body, nil
+}
+
+// parseTags splits a comma-separated tag string into individual tags.
+// Each tag is trimmed of whitespace. Empty tags are dropped.
+func parseTags(s string) []string {
+	parts := strings.Split(s, ",")
+	var tags []string
+	for _, p := range parts {
+		t := strings.TrimSpace(p)
+		if t != "" {
+			tags = append(tags, t)
+		}
+	}
+	return tags
+}
+
+// parseInternalLinks extracts all [[target]] wiki-link targets from body.
+func parseInternalLinks(body string) []string {
+	matches := reWikiLink.FindAllStringSubmatch(body, -1)
+	if len(matches) == 0 {
+		return nil
+	}
+	links := make([]string, len(matches))
+	for i, m := range matches {
+		links[i] = m[1]
+	}
+	return links
+}
+
+// Markdown serializes the note back to markdown with YAML frontmatter.
+// If there is no frontmatter (zero keys), only the body is returned.
 func (n *Note) Markdown() string {
-	return ""
+	var b strings.Builder
+
+	if hasFrontmatterKeys(n.Frontmatter) {
+		fmBytes, err := yaml.Marshal(n.Frontmatter)
+		if err == nil {
+			b.WriteString(frontmatterSep)
+			b.WriteByte('\n')
+			b.Write(fmBytes)
+			b.WriteString(frontmatterSep)
+			b.WriteByte('\n')
+		}
+	}
+
+	if n.Body != "" {
+		b.WriteString(n.Body)
+	}
+
+	return b.String()
 }
 
-// var loc *time.Location
-//
-// func init() {
-// 	var err error
-// 	loc, err = time.LoadLocation("Europe/Amsterdam")
-// 	if err != nil {
-// 		log.Fatalf("Load location: %s", err)
-// 	}
-// }
-
-// const dateLayout = "2006-01-02 15:04:05"
-
-// func (f *Frontmatter) Title() (string, bool) {
-// 	return f.Value("title")
-// }
-//
-// func (f *Frontmatter) SetTitle(v string) {
-// 	f.SetValue("title", v)
-// }
-//
-// func (f *Frontmatter) Date() (time.Time, bool) {
-// 	str, ok := f.Value("date")
-// 	if !ok {
-// 		return time.Time{}, false
-// 	}
-//
-// 	t, err := time.ParseInLocation(dateLayout, str, loc)
-// 	if err != nil {
-// 		return time.Time{}, true
-// 	}
-//
-// 	return t, true
-// }
-//
-// func (f *Frontmatter) SetDate(t time.Time) {
-// 	if t.IsZero() {
-// 		f.SetValue("date", "")
-// 		return
-// 	}
-// 	f.SetValue("date", t.Format(dateLayout))
-// }
-//
-// func (f *Frontmatter) Tags() ([]string, bool) {
-// 	str, ok := f.Value("tags")
-// 	if !ok {
-// 		return nil, false
-// 	}
-//
-// 	str = strings.ToLower(str)
-// 	tags := strings.Split(str, ",")
-//
-// 	existing := map[string]struct{}{}
-// 	for i, v := range tags {
-// 		slug := Slugify(v)
-// 		if _, ok := existing[slug]; !ok {
-// 			tags[i] = slug
-// 			existing[slug] = struct{}{}
-// 		}
-// 	}
-//
-// 	return tags, true
-// }
-//
-// func (f *Frontmatter) SetTags(tags []string) {
-// 	normalized := make([]string, len(tags))
-// 	existing := map[string]struct{}{}
-//
-// 	for i, v := range tags {
-// 		slug := Slugify(v)
-// 		if slug == "" {
-// 			continue
-// 		}
-// 		if _, ok := existing[slug]; !ok {
-// 			normalized[i] = slug
-// 			existing[slug] = struct{}{}
-// 		}
-// 	}
-//
-// 	f.SetValue("tags", strings.Join(normalized, ", "))
-// }
+// hasFrontmatterKeys reports whether the frontmatter has any key-value pairs.
+func hasFrontmatterKeys(f *Frontmatter) bool {
+	mn := f.mappingNode()
+	return len(mn.Content) > 0
+}
