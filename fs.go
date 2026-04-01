@@ -13,13 +13,8 @@ import (
 	"time"
 )
 
-var (
-	// reIDPrefix matches the new-format ID for NextID generation: yyyymmdd-num.
-	reIDPrefix = regexp.MustCompile(`^(\d{8})-(\d+)`)
-	// reNoteID extracts a structured numeric ID from a filename: one or more
-	// groups of digits separated by dashes (e.g. "20260328-1", "2026-02-12-2233-05").
-	reNoteID = regexp.MustCompile(`^([0-9]+(?:-[0-9]+)*)`)
-)
+// reIDPrefix matches the note ID format: yyyymmdd-num.
+var reIDPrefix = regexp.MustCompile(`^(\d{8})-(\d+)`)
 
 const readDirBatch = 256
 
@@ -144,15 +139,19 @@ func NotePlan(note *Note) *Plan {
 	}
 }
 
-// linkEntries computes the symlink entries for a note.
+// linkEntries computes the symlink entries for a note. Duplicate paths from
+// overlapping tag components (e.g. "welcome/here" and "welcome/there" both
+// producing a flat "welcome" entry) are deduplicated.
 func linkEntries(note *Note, filename string) []Link {
 	var links []Link
+	seen := map[string]bool{}
 
 	// Date symlink: notes/by/date/<yyyy-mm-dd>/<filename> -> ../../id/<filename>
 	if dateStr, ok := note.Frontmatter.Get("date"); ok {
 		t, err := time.Parse(dateLayout, dateStr)
 		if err == nil {
 			datePath := filepath.Join("notes", "by", "date", t.Format("2006-01-02"), filename)
+			seen[datePath] = true
 			links = append(links, Link{
 				Path:   datePath,
 				Target: filepath.Join("..", "..", "id", filename),
@@ -166,16 +165,19 @@ func linkEntries(note *Note, filename string) []Link {
 
 		// Nested: notes/by/tags/nested/<a>/<b>/<c>/<filename>
 		nestedPath := filepath.Join(append([]string{"notes", "by", "tags", "nested"}, append(parts, filename)...)...)
-		// From symlink dir back to notes/by/: up through each tag part + nested + tags = 2 + len(parts).
-		nestedUp := make([]string, 2+len(parts))
-		for i := range nestedUp {
-			nestedUp[i] = ".."
+		if !seen[nestedPath] {
+			// From symlink dir back to notes/by/: up through each tag part + nested + tags = 2 + len(parts).
+			nestedUp := make([]string, 2+len(parts))
+			for i := range nestedUp {
+				nestedUp[i] = ".."
+			}
+			nestedTarget := filepath.Join(append(nestedUp, "id", filename)...)
+			seen[nestedPath] = true
+			links = append(links, Link{
+				Path:   nestedPath,
+				Target: nestedTarget,
+			})
 		}
-		nestedTarget := filepath.Join(append(nestedUp, "id", filename)...)
-		links = append(links, Link{
-			Path:   nestedPath,
-			Target: nestedTarget,
-		})
 
 		// Flat: one entry per path component.
 		// notes/by/tags/flat/<component>/<filename>
@@ -183,6 +185,10 @@ func linkEntries(note *Note, filename string) []Link {
 		flatTarget := filepath.Join("..", "..", "..", "id", filename)
 		for _, part := range parts {
 			flatPath := filepath.Join("notes", "by", "tags", "flat", part, filename)
+			if seen[flatPath] {
+				continue
+			}
+			seen[flatPath] = true
 			links = append(links, Link{
 				Path:   flatPath,
 				Target: flatTarget,
@@ -242,14 +248,15 @@ func CreateNote(baseDir string, r io.Reader, opts PrepareOptions, id string, dry
 }
 
 // IDFromFilename extracts the note ID from a filename.
-// It returns the ID and whether a structured numeric ID was found (parsed).
+// It returns the ID and whether a structured ID was found (parsed).
 //
-// For filenames starting with digits-and-dashes (e.g. "20260328-1-hello.md",
-// "2026-02-12-2233-05-pacman.md"), it extracts the numeric prefix as the ID
-// and parsed is true.
+// For filenames matching the yyyymmdd-num format (e.g. "20260328-1-hello.md"),
+// it extracts the ID and parsed is true.
 //
-// For other .md filenames (e.g. "readme.md"), it uses the full stem (without
-// .md) as the ID and parsed is false.
+// For other .md filenames (e.g. "readme.md", "2020-06-15-2220-19-foo.md"),
+// it uses the full stem (without .md) as the ID and parsed is false.
+// These files are still processed for symlinks and broken links, but never
+// flagged for rename.
 //
 // For non-.md filenames, it returns empty string and false.
 func IDFromFilename(name string) (id string, parsed bool) {
@@ -259,12 +266,12 @@ func IDFromFilename(name string) (id string, parsed bool) {
 
 	stem := strings.TrimSuffix(name, ".md")
 
-	m := reNoteID.FindString(stem)
-	if m != "" {
-		return m, true
+	m := reIDPrefix.FindStringSubmatch(stem)
+	if m != nil {
+		return m[1] + "-" + m[2], true
 	}
 
-	// No numeric ID prefix; use the full stem.
+	// No matching ID; use the full stem.
 	return stem, false
 }
 
@@ -393,11 +400,11 @@ func ScanNotes(idDir string) (*RebuildReport, error) {
 	for _, n := range notes {
 		// Check for broken links.
 		for _, target := range n.internalLinks {
-			// Try to extract a numeric ID from the link target, then
-			// fall back to the raw target string.
+			// Try to extract a yyyymmdd-num ID, then fall back to
+			// the raw target string.
 			targetID := target
-			if m := reNoteID.FindString(target); m != "" {
-				targetID = m
+			if m := reIDPrefix.FindStringSubmatch(target); m != nil {
+				targetID = m[1] + "-" + m[2]
 			}
 			if _, exists := idSet[targetID]; !exists {
 				report.BrokenLinks = append(report.BrokenLinks, BrokenLink{

@@ -254,6 +254,41 @@ date: 2026-03-28 14:30:00
 	}
 }
 
+func TestNotePlanDuplicateTagComponents(t *testing.T) {
+	note, err := ReadNote("20260328-1", strings.NewReader(`---
+title: Hello
+date: 2026-03-28 14:30:00
+tags: welcome/here, welcome/there, foo/bar/x, foo/bar/y
+---`))
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	plan := NotePlan(note)
+
+	// No duplicate paths.
+	seen := map[string]bool{}
+	for _, l := range plan.Links {
+		if seen[l.Path] {
+			t.Errorf("duplicate link path: %s", l.Path)
+		}
+		seen[l.Path] = true
+	}
+
+	// Execute should succeed (no "file exists" errors).
+	baseDir := t.TempDir()
+	idDir := filepath.Join(baseDir, "notes", "by", "id")
+	if err := os.MkdirAll(idDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(idDir, "20260328-1-hello.md"), []byte("x"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := plan.Execute(baseDir); err != nil {
+		t.Fatalf("Execute() err = %q", err)
+	}
+}
+
 func TestPlanExecuteCreatesSymlinks(t *testing.T) {
 	baseDir := t.TempDir()
 	filename := "20260328-1-hello-world.md"
@@ -482,9 +517,9 @@ func TestIDFromFilename(t *testing.T) {
 		{"new format with slug", "20260328-1-hello-world.md", "20260328-1", true},
 		{"new format no slug", "20260328-1.md", "20260328-1", true},
 		{"new format large num", "20260328-42-foo.md", "20260328-42", true},
-		// Old format.
-		{"old format with slug", "2026-02-12-2233-05-pacman-cheatcheat.md", "2026-02-12-2233-05", true},
-		{"old format no slug", "2026-02-12-2233-05.md", "2026-02-12-2233-05", true},
+		// Old format: not parsed, full stem used as ID.
+		{"old format with slug", "2026-02-12-2233-05-pacman-cheatcheat.md", "2026-02-12-2233-05-pacman-cheatcheat", false},
+		{"old format no slug", "2026-02-12-2233-05.md", "2026-02-12-2233-05", false},
 		// Non-matching .md files: still processed, ID is full stem.
 		{"no numeric prefix", "notes-abc.md", "notes-abc", false},
 		{"plain name", "readme.md", "readme", false},
@@ -597,7 +632,7 @@ func TestScanNotesOldFormat(t *testing.T) {
 	baseDir := t.TempDir()
 	idDir := filepath.Join(baseDir, "notes", "by", "id")
 
-	// Old-format note with correct slug.
+	// Old-format note: not parsed, so never rename-checked.
 	writeTestNote(t, idDir, "2026-02-12-2233-05-pacman-cheatsheet.md", `---
 title: Pacman Cheatsheet
 date: 2026-02-12 22:33:05
@@ -606,7 +641,7 @@ tags: linux
 
 Pacman tips.`)
 
-	// Old-format note with wrong slug (title differs).
+	// Old-format note with mismatched title: still NOT rename-checked.
 	writeTestNote(t, idDir, "2026-01-05-1200-00-old-title.md", `---
 title: New Title
 date: 2026-01-05 12:00:00
@@ -614,34 +649,30 @@ date: 2026-01-05 12:00:00
 
 Some content.`)
 
-	// New-format note that links to the old-format note.
+	// New-format note that links to old-format note by full stem.
 	writeTestNote(t, idDir, "20260328-1-linker.md", `---
 title: Linker
 date: 2026-03-28 14:30:00
 ---
 
-See [[2026-02-12-2233-05]] and [[9999-99-99]].`)
+See [[2026-02-12-2233-05-pacman-cheatsheet]] and [[9999-99-99]].`)
 
 	report, err := ScanNotes(idDir)
 	if err != nil {
 		t.Fatalf("ScanNotes() err = %q", err)
 	}
 
-	// Broken link: 9999-99-99 doesn't exist. The old-format link should NOT be broken.
+	// Broken link: only 9999-99-99. The full-stem link to the old-format
+	// note resolves because the ID in the set is the full stem.
 	if len(report.BrokenLinks) != 1 {
 		t.Errorf("expected 1 broken link, got %d: %v", len(report.BrokenLinks), report.BrokenLinks)
 	} else if report.BrokenLinks[0].TargetID != "9999-99-99" {
 		t.Errorf("broken link target = %q, want %q", report.BrokenLinks[0].TargetID, "9999-99-99")
 	}
 
-	// Rename: old-title should become new-title.
-	if len(report.Renames) != 1 {
-		t.Errorf("expected 1 rename, got %d: %v", len(report.Renames), report.Renames)
-	} else {
-		rn := report.Renames[0]
-		if rn.OldName != "2026-01-05-1200-00-old-title.md" || rn.NewName != "2026-01-05-1200-00-new-title.md" {
-			t.Errorf("rename = {%s -> %s}, want {2026-01-05-1200-00-old-title.md -> 2026-01-05-1200-00-new-title.md}", rn.OldName, rn.NewName)
-		}
+	// No renames: old-format notes are not parsed, so never rename-checked.
+	if len(report.Renames) != 0 {
+		t.Errorf("expected 0 renames, got %d: %v", len(report.Renames), report.Renames)
 	}
 }
 
