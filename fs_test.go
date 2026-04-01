@@ -473,24 +473,31 @@ func TestCreateNoteSequentialIDs(t *testing.T) {
 
 func TestIDFromFilename(t *testing.T) {
 	tests := []struct {
-		name   string
-		input  string
-		wantID string
-		wantOK bool
+		name       string
+		input      string
+		wantID     string
+		wantParsed bool
 	}{
-		{"with slug", "20260328-1-hello-world.md", "20260328-1", true},
-		{"no slug", "20260328-1.md", "20260328-1", true},
-		{"large num", "20260328-42-foo.md", "20260328-42", true},
-		{"not a note", "readme.txt", "", false},
+		// New format.
+		{"new format with slug", "20260328-1-hello-world.md", "20260328-1", true},
+		{"new format no slug", "20260328-1.md", "20260328-1", true},
+		{"new format large num", "20260328-42-foo.md", "20260328-42", true},
+		// Old format.
+		{"old format with slug", "2026-02-12-2233-05-pacman-cheatcheat.md", "2026-02-12-2233-05", true},
+		{"old format no slug", "2026-02-12-2233-05.md", "2026-02-12-2233-05", true},
+		// Non-matching .md files: still processed, ID is full stem.
+		{"no numeric prefix", "notes-abc.md", "notes-abc", false},
+		{"plain name", "readme.md", "readme", false},
+		// Non-.md files: not processed.
+		{"not md", "readme.txt", "", false},
 		{"hidden file", ".hidden", "", false},
-		{"bad format", "notes-abc.md", "", false},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			id, ok := IDFromFilename(tt.input)
-			if ok != tt.wantOK {
-				t.Errorf("IDFromFilename(%q) ok = %v, want %v", tt.input, ok, tt.wantOK)
+			id, parsed := IDFromFilename(tt.input)
+			if parsed != tt.wantParsed {
+				t.Errorf("IDFromFilename(%q) parsed = %v, want %v", tt.input, parsed, tt.wantParsed)
 			}
 			if id != tt.wantID {
 				t.Errorf("IDFromFilename(%q) = %q, want %q", tt.input, id, tt.wantID)
@@ -583,6 +590,119 @@ No links.`)
 	}
 	if len(report.Renames) != 0 {
 		t.Errorf("expected 0 renames, got %d", len(report.Renames))
+	}
+}
+
+func TestScanNotesOldFormat(t *testing.T) {
+	baseDir := t.TempDir()
+	idDir := filepath.Join(baseDir, "notes", "by", "id")
+
+	// Old-format note with correct slug.
+	writeTestNote(t, idDir, "2026-02-12-2233-05-pacman-cheatsheet.md", `---
+title: Pacman Cheatsheet
+date: 2026-02-12 22:33:05
+tags: linux
+---
+
+Pacman tips.`)
+
+	// Old-format note with wrong slug (title differs).
+	writeTestNote(t, idDir, "2026-01-05-1200-00-old-title.md", `---
+title: New Title
+date: 2026-01-05 12:00:00
+---
+
+Some content.`)
+
+	// New-format note that links to the old-format note.
+	writeTestNote(t, idDir, "20260328-1-linker.md", `---
+title: Linker
+date: 2026-03-28 14:30:00
+---
+
+See [[2026-02-12-2233-05]] and [[9999-99-99]].`)
+
+	report, err := ScanNotes(idDir)
+	if err != nil {
+		t.Fatalf("ScanNotes() err = %q", err)
+	}
+
+	// Broken link: 9999-99-99 doesn't exist. The old-format link should NOT be broken.
+	if len(report.BrokenLinks) != 1 {
+		t.Errorf("expected 1 broken link, got %d: %v", len(report.BrokenLinks), report.BrokenLinks)
+	} else if report.BrokenLinks[0].TargetID != "9999-99-99" {
+		t.Errorf("broken link target = %q, want %q", report.BrokenLinks[0].TargetID, "9999-99-99")
+	}
+
+	// Rename: old-title should become new-title.
+	if len(report.Renames) != 1 {
+		t.Errorf("expected 1 rename, got %d: %v", len(report.Renames), report.Renames)
+	} else {
+		rn := report.Renames[0]
+		if rn.OldName != "2026-01-05-1200-00-old-title.md" || rn.NewName != "2026-01-05-1200-00-new-title.md" {
+			t.Errorf("rename = {%s -> %s}, want {2026-01-05-1200-00-old-title.md -> 2026-01-05-1200-00-new-title.md}", rn.OldName, rn.NewName)
+		}
+	}
+}
+
+func TestScanNotesNonMatchingFiles(t *testing.T) {
+	baseDir := t.TempDir()
+	idDir := filepath.Join(baseDir, "notes", "by", "id")
+
+	// Normal note.
+	writeTestNote(t, idDir, "20260328-1-hello.md", `---
+title: Hello
+---
+
+Links to [[readme]].`)
+
+	// Non-matching .md file: should be picked up, no rename attempted.
+	writeTestNote(t, idDir, "readme.md", `---
+title: Readme
+---
+
+Some info.`)
+
+	report, err := ScanNotes(idDir)
+	if err != nil {
+		t.Fatalf("ScanNotes() err = %q", err)
+	}
+
+	// The link to [[readme]] should NOT be broken (readme.md is in the set).
+	if len(report.BrokenLinks) != 0 {
+		t.Errorf("expected 0 broken links, got %d: %v", len(report.BrokenLinks), report.BrokenLinks)
+	}
+
+	// No renames: readme.md has no parsed ID, so no rename check.
+	if len(report.Renames) != 0 {
+		t.Errorf("expected 0 renames, got %d: %v", len(report.Renames), report.Renames)
+	}
+}
+
+func TestScanNotesNoTitleStripsSlug(t *testing.T) {
+	baseDir := t.TempDir()
+	idDir := filepath.Join(baseDir, "notes", "by", "id")
+
+	// Note with parsed ID but no title: should be flagged for rename
+	// to strip the slug from the filename.
+	writeTestNote(t, idDir, "20260328-1-some-slug.md", `---
+date: 2026-03-28 14:30:00
+---
+
+No title here.`)
+
+	report, err := ScanNotes(idDir)
+	if err != nil {
+		t.Fatalf("ScanNotes() err = %q", err)
+	}
+
+	if len(report.Renames) != 1 {
+		t.Errorf("expected 1 rename, got %d: %v", len(report.Renames), report.Renames)
+	} else {
+		rn := report.Renames[0]
+		if rn.OldName != "20260328-1-some-slug.md" || rn.NewName != "20260328-1.md" {
+			t.Errorf("rename = {%s -> %s}, want {20260328-1-some-slug.md -> 20260328-1.md}", rn.OldName, rn.NewName)
+		}
 	}
 }
 
@@ -714,6 +834,62 @@ tags: test
 	wantTarget := filepath.Join(idDir, "20260328-1-hello.md")
 	if resolved != wantTarget {
 		t.Errorf("symlink resolves to %q, want %q", resolved, wantTarget)
+	}
+}
+
+func TestRebuildSymlinksOldFormat(t *testing.T) {
+	baseDir := t.TempDir()
+	idDir := filepath.Join(baseDir, "notes", "by", "id")
+
+	// Old-format note.
+	writeTestNote(t, idDir, "2026-02-12-2233-05-pacman-cheatsheet.md", `---
+title: Pacman Cheatsheet
+date: 2026-02-12 22:33:05
+tags: linux/pacman
+---
+
+Tips.`)
+
+	// Non-matching .md file.
+	writeTestNote(t, idDir, "readme.md", `---
+title: Readme
+date: 2026-01-01 00:00:00
+tags: meta
+---
+
+Info.`)
+
+	if err := RebuildSymlinks(baseDir); err != nil {
+		t.Fatalf("RebuildSymlinks() err = %q", err)
+	}
+
+	// Old-format note should have symlinks using the actual filename.
+	wantLinks := []struct {
+		link   string
+		target string
+	}{
+		// Old-format note symlinks.
+		{"notes/by/date/2026-02-12/2026-02-12-2233-05-pacman-cheatsheet.md", "2026-02-12-2233-05-pacman-cheatsheet.md"},
+		{"notes/by/tags/nested/linux/pacman/2026-02-12-2233-05-pacman-cheatsheet.md", "2026-02-12-2233-05-pacman-cheatsheet.md"},
+		{"notes/by/tags/flat/linux/2026-02-12-2233-05-pacman-cheatsheet.md", "2026-02-12-2233-05-pacman-cheatsheet.md"},
+		{"notes/by/tags/flat/pacman/2026-02-12-2233-05-pacman-cheatsheet.md", "2026-02-12-2233-05-pacman-cheatsheet.md"},
+		// Non-matching .md file symlinks.
+		{"notes/by/date/2026-01-01/readme.md", "readme.md"},
+		{"notes/by/tags/nested/meta/readme.md", "readme.md"},
+		{"notes/by/tags/flat/meta/readme.md", "readme.md"},
+	}
+
+	for _, wl := range wantLinks {
+		absLink := filepath.Join(baseDir, wl.link)
+		resolved, err := filepath.EvalSymlinks(absLink)
+		if err != nil {
+			t.Errorf("symlink %s cannot be resolved: %v", wl.link, err)
+			continue
+		}
+		wantTarget := filepath.Join(idDir, wl.target)
+		if resolved != wantTarget {
+			t.Errorf("symlink %s resolves to %q, want %q", wl.link, resolved, wantTarget)
+		}
 	}
 }
 
