@@ -1,6 +1,7 @@
 package gonotes
 
 import (
+	"encoding/json"
 	"strings"
 	"testing"
 
@@ -420,5 +421,101 @@ func TestParseInternalLinks(t *testing.T) {
 				t.Errorf("parseInternalLinks() diff (-want, +got):\n%s", diff)
 			}
 		})
+	}
+}
+
+func TestJSON(t *testing.T) {
+	input := `---
+title: Hello world
+date: 2026-03-28 10:00:00
+tags: foo/bar, baz
+href: https://example.com
+---
+
+Body with [[20260101-1]] and [[20260102-3]].`
+
+	note, err := ReadNote("20260328-1", strings.NewReader(input))
+	if err != nil {
+		t.Fatalf("ReadNote() err = %q", err)
+	}
+
+	b, err := note.JSON()
+	if err != nil {
+		t.Fatalf("JSON() err = %q", err)
+	}
+
+	// Unmarshal into a generic structure to verify fields.
+	var got map[string]any
+	if err := json.Unmarshal(b, &got); err != nil {
+		t.Fatalf("json.Unmarshal() err = %q", err)
+	}
+
+	if got["id"] != "20260328-1" {
+		t.Errorf("id = %v, want %q", got["id"], "20260328-1")
+	}
+	if got["title"] != "Hello world" {
+		t.Errorf("title = %v, want %q", got["title"], "Hello world")
+	}
+	if got["slug"] != "hello-world" {
+		t.Errorf("slug = %v, want %q", got["slug"], "hello-world")
+	}
+
+	tags, ok := got["tags"].([]any)
+	if !ok {
+		t.Fatalf("tags is not an array: %T", got["tags"])
+	}
+	wantTags := []any{"foo/bar", "baz"}
+	if diff := cmp.Diff(wantTags, tags); diff != "" {
+		t.Errorf("tags diff (-want, +got):\n%s", diff)
+	}
+
+	links, ok := got["internalLinks"].([]any)
+	if !ok {
+		t.Fatalf("internalLinks is not an array: %T", got["internalLinks"])
+	}
+	wantLinks := []any{"20260101-1", "20260102-3"}
+	if diff := cmp.Diff(wantLinks, links); diff != "" {
+		t.Errorf("internalLinks diff (-want, +got):\n%s", diff)
+	}
+
+	fm, ok := got["frontmatter"].(map[string]any)
+	if !ok {
+		t.Fatalf("frontmatter is not an object: %T", got["frontmatter"])
+	}
+	if fm["title"] != "Hello world" {
+		t.Errorf("frontmatter.title = %v, want %q", fm["title"], "Hello world")
+	}
+	if fm["href"] != "https://example.com" {
+		t.Errorf("frontmatter.href = %v, want %q", fm["href"], "https://example.com")
+	}
+	if fm["date"] != "2026-03-28 10:00:00" {
+		t.Errorf("frontmatter.date = %v, want %q", fm["date"], "2026-03-28 10:00:00")
+	}
+}
+
+func TestJSONOmitsEmptyFields(t *testing.T) {
+	note := NewNote()
+	note.Frontmatter.Set("date", "2026-01-01 00:00:00")
+
+	b, err := note.JSON()
+	if err != nil {
+		t.Fatalf("JSON() err = %q", err)
+	}
+
+	var got map[string]any
+	if err := json.Unmarshal(b, &got); err != nil {
+		t.Fatalf("json.Unmarshal() err = %q", err)
+	}
+
+	// These should be omitted (omitempty).
+	for _, key := range []string{"id", "title", "slug", "tags", "body", "internalLinks"} {
+		if _, ok := got[key]; ok {
+			t.Errorf("expected %q to be omitted, but it was present: %v", key, got[key])
+		}
+	}
+
+	// Frontmatter should still be present.
+	if _, ok := got["frontmatter"]; !ok {
+		t.Error("expected frontmatter to be present")
 	}
 }

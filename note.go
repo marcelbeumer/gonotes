@@ -2,6 +2,7 @@ package gonotes
 
 import (
 	"bufio"
+	"encoding/json"
 	"fmt"
 	"io"
 	"regexp"
@@ -159,4 +160,29 @@ func (n *Note) Markdown() string {
 func hasFrontmatterKeys(f *Frontmatter) bool {
 	mn := f.mappingNode()
 	return len(mn.Content) > 0
+}
+
+// noteJSON is the JSON-serializable representation of a Note.
+type noteJSON struct {
+	ID            string            `json:"id,omitempty"`
+	Title         string            `json:"title,omitempty"`
+	Slug          string            `json:"slug,omitempty"`
+	Tags          []string          `json:"tags,omitempty"`
+	Body          string            `json:"body,omitempty"`
+	InternalLinks []string          `json:"internalLinks,omitempty"`
+	Frontmatter   map[string]string `json:"frontmatter,omitempty"`
+}
+
+// JSON returns a pretty-printed JSON representation of the note.
+func (n *Note) JSON() ([]byte, error) {
+	v := noteJSON{
+		ID:            n.ID,
+		Title:         n.Title,
+		Slug:          n.Slug,
+		Tags:          n.Tags,
+		Body:          n.Body,
+		InternalLinks: n.InternalLinks,
+		Frontmatter:   n.Frontmatter.Map(),
+	}
+	return json.MarshalIndent(v, "", "  ")
 }
