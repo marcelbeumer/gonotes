@@ -6,6 +6,7 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+	"time"
 
 	gonotes "github.com/marcelbeumer/gonotes"
 )
@@ -13,6 +14,7 @@ import (
 const usage = `Usage: gonotes2 <command> [flags]
 
 Commands:
+  id         Print the next available note ID
   new        Create a new note
   prepare    Prepare a note: merge frontmatter fields, output to stdout
 `
@@ -24,6 +26,11 @@ func main() {
 	}
 
 	switch os.Args[1] {
+	case "id":
+		if err := runID(); err != nil {
+			fmt.Fprintf(os.Stderr, "error: %v\n", err)
+			os.Exit(1)
+		}
 	case "new":
 		if err := runNew(os.Args[2:]); err != nil {
 			fmt.Fprintf(os.Stderr, "error: %v\n", err)
@@ -244,5 +251,21 @@ Flags:
 
 	// Normal mode: print the path of the created file.
 	fmt.Fprintln(os.Stdout, filepath.Join(baseDir, plan.WritePath))
+	return nil
+}
+
+func runID() error {
+	baseDir, err := os.Getwd()
+	if err != nil {
+		return fmt.Errorf("get working directory: %w", err)
+	}
+
+	idDir := filepath.Join(baseDir, "notes", "by", "id")
+	id, err := gonotes.NextID(idDir, time.Now())
+	if err != nil {
+		return err
+	}
+
+	fmt.Fprintln(os.Stdout, id)
 	return nil
 }
