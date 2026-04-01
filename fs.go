@@ -13,7 +13,13 @@ import (
 	"time"
 )
 
-var reIDPrefix = regexp.MustCompile(`^(\d{8})-(\d+)`)
+var (
+	// reIDPrefix matches the new-format ID for NextID generation: yyyymmdd-num.
+	reIDPrefix = regexp.MustCompile(`^(\d{8})-(\d+)`)
+	// reNoteID extracts a structured numeric ID from a filename: one or more
+	// groups of digits separated by dashes (e.g. "20260328-1", "2026-02-12-2233-05").
+	reNoteID = regexp.MustCompile(`^([0-9]+(?:-[0-9]+)*)`)
+)
 
 const readDirBatch = 256
 
@@ -235,14 +241,31 @@ func CreateNote(baseDir string, r io.Reader, opts PrepareOptions, id string, dry
 	return note, plan, nil
 }
 
-// IDFromFilename extracts the note ID from a filename like "20260328-1-hello.md".
-// Returns the ID and true, or empty string and false if the filename doesn't match.
-func IDFromFilename(name string) (string, bool) {
-	m := reIDPrefix.FindStringSubmatch(name)
-	if m == nil {
+// IDFromFilename extracts the note ID from a filename.
+// It returns the ID and whether a structured numeric ID was found (parsed).
+//
+// For filenames starting with digits-and-dashes (e.g. "20260328-1-hello.md",
+// "2026-02-12-2233-05-pacman.md"), it extracts the numeric prefix as the ID
+// and parsed is true.
+//
+// For other .md filenames (e.g. "readme.md"), it uses the full stem (without
+// .md) as the ID and parsed is false.
+//
+// For non-.md filenames, it returns empty string and false.
+func IDFromFilename(name string) (id string, parsed bool) {
+	if !strings.HasSuffix(name, ".md") {
 		return "", false
 	}
-	return m[1] + "-" + m[2], true
+
+	stem := strings.TrimSuffix(name, ".md")
+
+	m := reNoteID.FindString(stem)
+	if m != "" {
+		return m, true
+	}
+
+	// No numeric ID prefix; use the full stem.
+	return stem, false
 }
 
 // BrokenLink records an internal link that references a non-existent note.
@@ -318,10 +341,7 @@ func ScanNotes(idDir string) (*RebuildReport, error) {
 				continue
 			}
 
-			id, ok := IDFromFilename(name)
-			if !ok {
-				continue
-			}
+			id, parsed := IDFromFilename(name)
 
 			path := filepath.Join(idDir, name)
 			nf, err := os.Open(path)
@@ -335,10 +355,17 @@ func ScanNotes(idDir string) (*RebuildReport, error) {
 				return nil, fmt.Errorf("scan notes: read %s: %w", name, err)
 			}
 
+			// Only compute a correct name when we have a parsed ID.
+			// Otherwise keep the current name (no rename).
+			correctName := name
+			if parsed {
+				correctName = NoteFilename(id, note.Slug)
+			}
+
 			notes = append(notes, noteInfo{
 				id:            id,
 				currentName:   name,
-				correctName:   NoteFilename(id, note.Slug),
+				correctName:   correctName,
 				internalLinks: note.InternalLinks,
 			})
 		}
@@ -366,12 +393,11 @@ func ScanNotes(idDir string) (*RebuildReport, error) {
 	for _, n := range notes {
 		// Check for broken links.
 		for _, target := range n.internalLinks {
-			// The target may be just an ID or may have extra text; try to
-			// extract an ID from it.
-			targetID, ok := IDFromFilename(target)
-			if !ok {
-				// Treat the raw target as an ID.
-				targetID = target
+			// Try to extract a numeric ID from the link target, then
+			// fall back to the raw target string.
+			targetID := target
+			if m := reNoteID.FindString(target); m != "" {
+				targetID = m
 			}
 			if _, exists := idSet[targetID]; !exists {
 				report.BrokenLinks = append(report.BrokenLinks, BrokenLink{
@@ -437,10 +463,7 @@ func RebuildSymlinks(baseDir string) error {
 				continue
 			}
 
-			id, ok := IDFromFilename(name)
-			if !ok {
-				continue
-			}
+			id, _ := IDFromFilename(name)
 
 			path := filepath.Join(idDir, name)
 			nf, err := os.Open(path)
@@ -454,7 +477,13 @@ func RebuildSymlinks(baseDir string) error {
 				return fmt.Errorf("rebuild symlinks: read %s: %w", name, err)
 			}
 
-			plan := NotePlan(note)
+			// Use the actual filename on disk for symlink targets,
+			// not a computed one. The file may have an old ID format.
+			links := linkEntries(note, name)
+			plan := &Plan{
+				WritePath: filepath.Join("notes", "by", "id", name),
+				Links:     links,
+			}
 			if err := plan.Execute(baseDir); err != nil {
 				return fmt.Errorf("rebuild symlinks: %w", err)
 			}
