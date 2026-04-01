@@ -87,6 +87,53 @@ version: 2
 	}
 }
 
+func TestFrontmatterMap(t *testing.T) {
+	tests := []struct {
+		name  string
+		input string
+		want  map[string]string
+	}{
+		{
+			name: "all scalar fields",
+			input: `title: Hello world
+date: 2026-01-15 20:43:09
+tags: foo/bar, this/that
+href: https://example.com`,
+			want: map[string]string{
+				"title": "Hello world",
+				"date":  "2026-01-15 20:43:09",
+				"tags":  "foo/bar, this/that",
+				"href":  "https://example.com",
+			},
+		},
+		{
+			name:  "empty frontmatter",
+			input: "",
+			want:  map[string]string{},
+		},
+		{
+			name:  "single field",
+			input: `title: Test`,
+			want:  map[string]string{"title": "Test"},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			f := NewFrontmatter()
+			if tt.input != "" {
+				if err := yaml.Unmarshal([]byte(tt.input), f); err != nil {
+					t.Fatalf("Unmarshal() err = %q", err)
+				}
+			}
+			got := f.Map()
+			if diff := cmp.Diff(tt.want, got); diff != "" {
+				t.Errorf("Map() diff (-want, +got):\n%s", diff)
+			}
+		})
+	}
+}
+
 func TestFrontmatterUnmarshalIdempotent(t *testing.T) {
 	basics := `title: Hello world
 date: 2026-01-15 20:43:09

@@ -53,6 +53,7 @@ func runPrepare(args []string) error {
 	tags := fs.String("T", "", "set tags (comma-separated)")
 	date := fs.String("d", "", "set date (default: now)")
 	file := fs.String("f", "", "read note from file")
+	output := fs.String("o", "md", "output format: md or json")
 
 	fs.Usage = func() {
 		fmt.Fprintf(os.Stderr, `Usage: gonotes2 prepare [flags] [-]
@@ -103,11 +104,26 @@ Flags:
 		}
 	})
 
+	if *output != "md" && *output != "json" {
+		return fmt.Errorf("unknown output format: %q (use md or json)", *output)
+	}
+
 	note, err := gonotes.Prepare(r, opts)
 	if err != nil {
 		return err
 	}
 
-	_, err = fmt.Fprint(os.Stdout, note.Markdown())
-	return err
+	switch *output {
+	case "json":
+		b, err := note.JSON()
+		if err != nil {
+			return err
+		}
+		b = append(b, '\n')
+		_, err = os.Stdout.Write(b)
+		return err
+	default:
+		_, err = fmt.Fprint(os.Stdout, note.Markdown())
+		return err
+	}
 }
