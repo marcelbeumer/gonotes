@@ -7,6 +7,7 @@ import (
 	"io"
 	"regexp"
 	"strings"
+	"time"
 
 	"gopkg.in/yaml.v3"
 )
@@ -18,6 +19,7 @@ const frontmatterSep = "---"
 type Note struct {
 	Frontmatter   *Frontmatter
 	ID            string
+	Date          time.Time // is zero if none
 	Title         string
 	Slug          string
 	Tags          []string
@@ -60,6 +62,14 @@ func ReadNote(id string, r io.Reader) (*Note, error) {
 
 	if tags, ok := note.Frontmatter.Get("tags"); ok {
 		note.Tags = parseTags(tags)
+	}
+
+	if dateStr, ok := note.Frontmatter.Get("date"); ok {
+		t, err := time.Parse(dateLayout, dateStr)
+		if err != nil {
+			return note, fmt.Errorf("parse date %q: %w", dateStr, err)
+		}
+		note.Date = t
 	}
 
 	note.InternalLinks = parseInternalLinks(body)
