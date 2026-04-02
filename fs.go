@@ -18,17 +18,15 @@ var reIDPrefix = regexp.MustCompile(`^(\d{8})-(\d+)`)
 
 const readDirBatch = 256
 
-// NextID generates the next available note ID by scanning dir for existing
-// notes with today's date prefix. The ID format is yyyymmdd-<num>.
-func NextID(dir string, now time.Time) (string, error) {
+func MaxNumFromDir(dir string, now time.Time) (int, error) {
 	prefix := now.Format("20060102")
 
 	f, err := os.Open(dir)
 	if err != nil {
 		if errors.Is(err, os.ErrNotExist) {
-			return prefix + "-1", nil
+			return 0, nil
 		}
-		return "", fmt.Errorf("next id: %w", err)
+		return 0, fmt.Errorf("open dir: %w", err)
 	}
 	defer f.Close()
 
@@ -55,11 +53,31 @@ func NextID(dir string, now time.Time) (string, error) {
 			if errors.Is(err, io.EOF) {
 				break
 			}
-			return "", fmt.Errorf("next id: read dir: %w", err)
+			return 0, fmt.Errorf("read dir: %w", err)
 		}
 	}
 
-	return fmt.Sprintf("%s-%d", prefix, maxNum+1), nil
+	return maxNum, nil
+}
+
+func idPrefix(t time.Time) string {
+	return t.Format("20060102")
+}
+
+func fmtID(prefix string, num int) string {
+	return fmt.Sprintf("%s-%d", prefix, num)
+}
+
+// NextID generates the next available note ID by scanning dir for existing
+// notes with today's date prefix. The ID format is yyyymmdd-<num>.
+func NextID(dir string, now time.Time) (string, error) {
+	maxNum, err := MaxNumFromDir(dir, now)
+	if err != nil {
+		return "", fmt.Errorf("max id: %w", err)
+	}
+
+	prefix := idPrefix(now)
+	return fmtID(prefix, maxNum+1), nil
 }
 
 // NoteFilename returns the markdown filename for a note given its ID and slug.
@@ -336,6 +354,7 @@ func ScanNotes(idDir string) (*RebuildReport, error) {
 	}
 
 	var notes []noteInfo
+	maxNums := map[string]int{}
 
 	for {
 		entries, err := f.ReadDir(readDirBatch)
@@ -367,6 +386,19 @@ func ScanNotes(idDir string) (*RebuildReport, error) {
 			correctName := name
 			if parsed {
 				correctName = NoteFilename(id, note.Slug)
+			} else if !note.Date.IsZero() {
+				prefix := idPrefix(note.Date)
+				if _, ok := maxNums[prefix]; !ok {
+					maxNum, err := MaxNumFromDir(idDir, note.Date)
+					if err != nil {
+						return nil, fmt.Errorf("max num from dir: %w", err)
+					}
+					maxNums[prefix] = maxNum
+				}
+				num := maxNums[prefix] + 1
+				id := fmtID(prefix, num)
+				correctName = NoteFilename(id, note.Slug)
+				maxNums[prefix] = num
 			}
 
 			notes = append(notes, noteInfo{
