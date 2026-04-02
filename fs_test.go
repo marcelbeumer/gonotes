@@ -703,7 +703,7 @@ title: Hello
 
 Links to [[readme]].`)
 
-	// Non-matching .md file: should be picked up, no rename attempted.
+	// Non-matching .md file with no date: should be reported as error.
 	writeTestNote(t, idDir, "readme.md", `---
 title: Readme
 ---
@@ -715,14 +715,23 @@ Some info.`)
 		t.Fatalf("ScanNotes() err = %q", err)
 	}
 
-	// The link to [[readme]] should NOT be broken (readme.md is in the set).
-	if len(report.BrokenLinks) != 0 {
-		t.Errorf("expected 0 broken links, got %d: %v", len(report.BrokenLinks), report.BrokenLinks)
+	// readme.md is now excluded from the ID set, so [[readme]] is broken.
+	if len(report.BrokenLinks) != 1 {
+		t.Errorf("expected 1 broken link, got %d: %v", len(report.BrokenLinks), report.BrokenLinks)
+	} else if report.BrokenLinks[0].TargetID != "readme" {
+		t.Errorf("broken link target = %q, want %q", report.BrokenLinks[0].TargetID, "readme")
 	}
 
-	// No renames: readme.md has no parsed ID, so no rename check.
+	// No renames.
 	if len(report.Renames) != 0 {
 		t.Errorf("expected 0 renames, got %d: %v", len(report.Renames), report.Renames)
+	}
+
+	// readme.md should appear in errors.
+	if len(report.Errors) != 1 {
+		t.Errorf("expected 1 error, got %d: %v", len(report.Errors), report.Errors)
+	} else if report.Errors[0].Filename != "readme.md" {
+		t.Errorf("error filename = %q, want %q", report.Errors[0].Filename, "readme.md")
 	}
 }
 
@@ -968,6 +977,22 @@ func TestRebuildReportString(t *testing.T) {
 			t.Errorf("String() missing rename entry")
 		}
 	})
+
+	t.Run("with errors", func(t *testing.T) {
+		r := &RebuildReport{
+			Errors: []ScanError{{Filename: "readme.md", Message: "cannot determine note ID (no parseable ID and no date)"}},
+		}
+		got := r.String()
+		if !strings.Contains(got, "Errors (1)") {
+			t.Errorf("String() missing errors header, got:\n%s", got)
+		}
+		if !strings.Contains(got, "readme.md: cannot determine note ID") {
+			t.Errorf("String() missing error entry, got:\n%s", got)
+		}
+		if strings.Contains(got, "No issues found") {
+			t.Errorf("String() should not say 'No issues found' when there are errors")
+		}
+	})
 }
 
 func TestMaxNumFromDir(t *testing.T) {
@@ -1120,7 +1145,7 @@ func TestScanNotesOldFormatNoDate(t *testing.T) {
 	baseDir := t.TempDir()
 	idDir := filepath.Join(baseDir, "notes", "by", "id")
 
-	// Old-format file WITHOUT a date: should NOT be renamed.
+	// Old-format file WITHOUT a date: should be reported as error.
 	writeTestNote(t, idDir, "2026-03-28-1430-00-no-date.md", `---
 title: No Date Note
 ---
@@ -1133,7 +1158,74 @@ Content without date.`)
 	}
 
 	if len(report.Renames) != 0 {
-		t.Errorf("expected 0 renames for old-format note without date, got %d: %v",
-			len(report.Renames), report.Renames)
+		t.Errorf("expected 0 renames, got %d: %v", len(report.Renames), report.Renames)
+	}
+
+	if len(report.Errors) != 1 {
+		t.Errorf("expected 1 error, got %d: %v", len(report.Errors), report.Errors)
+	} else if report.Errors[0].Filename != "2026-03-28-1430-00-no-date.md" {
+		t.Errorf("error filename = %q, want %q", report.Errors[0].Filename, "2026-03-28-1430-00-no-date.md")
+	}
+}
+
+func TestScanNotesCollectsErrors(t *testing.T) {
+	baseDir := t.TempDir()
+	idDir := filepath.Join(baseDir, "notes", "by", "id")
+
+	// Valid new-format note: no error.
+	writeTestNote(t, idDir, "20260328-1-hello.md", `---
+title: Hello
+date: 2026-03-28 14:30:00
+---
+
+Body.`)
+
+	// Old-format note with date: rename, no error.
+	writeTestNote(t, idDir, "2026-01-05-1200-00-has-date.md", `---
+title: Has Date
+date: 2026-01-05 12:00:00
+---
+
+Content.`)
+
+	// Non-matching .md file without date: error.
+	writeTestNote(t, idDir, "readme.md", `---
+title: Readme
+---
+
+Info.`)
+
+	// Old-format note without date: error.
+	writeTestNote(t, idDir, "2026-02-12-2233-05-no-date.md", `---
+title: No Date
+---
+
+Tips.`)
+
+	report, err := ScanNotes(idDir)
+	if err != nil {
+		t.Fatalf("ScanNotes() err = %q", err)
+	}
+
+	// One rename: the old-format note with a date.
+	if len(report.Renames) != 1 {
+		t.Errorf("expected 1 rename, got %d: %v", len(report.Renames), report.Renames)
+	} else if report.Renames[0].OldName != "2026-01-05-1200-00-has-date.md" {
+		t.Errorf("rename old = %q, want %q", report.Renames[0].OldName, "2026-01-05-1200-00-has-date.md")
+	}
+
+	// Two errors: readme.md and the old-format note without date.
+	if len(report.Errors) != 2 {
+		t.Fatalf("expected 2 errors, got %d: %v", len(report.Errors), report.Errors)
+	}
+	errFiles := map[string]bool{}
+	for _, e := range report.Errors {
+		errFiles[e.Filename] = true
+	}
+	if !errFiles["readme.md"] {
+		t.Error("expected error for readme.md")
+	}
+	if !errFiles["2026-02-12-2233-05-no-date.md"] {
+		t.Error("expected error for 2026-02-12-2233-05-no-date.md")
 	}
 }
