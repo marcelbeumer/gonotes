@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/google/go-cmp/cmp"
 )
@@ -490,6 +491,51 @@ Body with [[20260101-1]] and [[20260102-3]].`
 	}
 	if fm["date"] != "2026-03-28 10:00:00" {
 		t.Errorf("frontmatter.date = %v, want %q", fm["date"], "2026-03-28 10:00:00")
+	}
+}
+
+func TestReadNoteDateParsing(t *testing.T) {
+	note, err := ReadNote("20260328-1", strings.NewReader(`---
+title: Hello
+date: 2026-03-28 14:30:00
+---
+
+Body.`))
+	if err != nil {
+		t.Fatalf("ReadNote() err = %q", err)
+	}
+
+	want := time.Date(2026, 3, 28, 14, 30, 0, 0, time.UTC)
+	if !note.Date.Equal(want) {
+		t.Errorf("Date = %v, want %v", note.Date, want)
+	}
+}
+
+func TestReadNoteDateZero(t *testing.T) {
+	note, err := ReadNote("20260328-1", strings.NewReader(`---
+title: No Date
+---
+
+Body.`))
+	if err != nil {
+		t.Fatalf("ReadNote() err = %q", err)
+	}
+
+	if !note.Date.IsZero() {
+		t.Errorf("Date = %v, want zero", note.Date)
+	}
+}
+
+func TestReadNoteDateInvalid(t *testing.T) {
+	_, err := ReadNote("20260328-1", strings.NewReader(`---
+title: Bad Date
+date: not-a-date
+---`))
+	if err == nil {
+		t.Fatal("ReadNote() err = <nil>, want error for invalid date")
+	}
+	if !strings.Contains(err.Error(), "parse date") {
+		t.Errorf("error = %q, want it to contain %q", err.Error(), "parse date")
 	}
 }
 
