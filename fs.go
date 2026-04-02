@@ -305,10 +305,17 @@ type Rename struct {
 	NewName string // correct filename based on id + slug
 }
 
+// ScanError records a file that could not be processed during a scan.
+type ScanError struct {
+	Filename string
+	Message  string
+}
+
 // RebuildReport holds the results of scanning notes/by/id/.
 type RebuildReport struct {
 	BrokenLinks []BrokenLink
 	Renames     []Rename
+	Errors      []ScanError
 }
 
 // String returns a human-readable summary of the report.
@@ -329,7 +336,14 @@ func (r *RebuildReport) String() string {
 		}
 	}
 
-	if len(r.BrokenLinks) == 0 && len(r.Renames) == 0 {
+	if len(r.Errors) > 0 {
+		fmt.Fprintf(&b, "Errors (%d):\n", len(r.Errors))
+		for _, e := range r.Errors {
+			fmt.Fprintf(&b, "  %s: %s\n", e.Filename, e.Message)
+		}
+	}
+
+	if len(r.BrokenLinks) == 0 && len(r.Renames) == 0 && len(r.Errors) == 0 {
 		b.WriteString("No issues found.\n")
 	}
 
@@ -354,6 +368,7 @@ func ScanNotes(idDir string) (*RebuildReport, error) {
 	}
 
 	var notes []noteInfo
+	var scanErrors []ScanError
 	maxNums := map[string]int{}
 
 	for {
@@ -382,7 +397,8 @@ func ScanNotes(idDir string) (*RebuildReport, error) {
 			}
 
 			// Only compute a correct name when we have a parsed ID.
-			// Otherwise keep the current name (no rename).
+			// If unparsed but has a date, generate a new ID from the date.
+			// Otherwise record an error.
 			correctName := name
 			if parsed {
 				correctName = NoteFilename(id, note.Slug)
@@ -399,6 +415,12 @@ func ScanNotes(idDir string) (*RebuildReport, error) {
 				id := fmtID(prefix, num)
 				correctName = NoteFilename(id, note.Slug)
 				maxNums[prefix] = num
+			} else {
+				scanErrors = append(scanErrors, ScanError{
+					Filename: name,
+					Message:  "cannot determine note ID (no parseable ID and no date)",
+				})
+				continue
 			}
 
 			notes = append(notes, noteInfo{
@@ -427,7 +449,9 @@ func ScanNotes(idDir string) (*RebuildReport, error) {
 		return notes[i].id < notes[j].id
 	})
 
-	report := &RebuildReport{}
+	report := &RebuildReport{
+		Errors: scanErrors,
+	}
 
 	for _, n := range notes {
 		// Check for broken links.
