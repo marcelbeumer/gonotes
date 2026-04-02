@@ -78,9 +78,6 @@ Codestyle and general directions for refactor:
 - Everything should be unit tested. It's best to have a few good integration
   tests, and then unit tests to check different edge cases (and normal cases
   too ofc)
-- The old code we should still keep working until refactor is complete.
-  Entrypoint cmd/gonotes. Old non-main code may keep living in internal/*.
-- The rewrite entrypoit is cmd/gonotes2 and we put go files in the root of the
-  repo as we already have (see dir with note.go and frontmatter.go for
-  example).
+- Entrypoint is cmd/gonotes. Library code lives in the root of the repo
+  (note.go, frontmatter.go, fs.go, etc.).
 - The general idea is to keep things simple, small and flat.
