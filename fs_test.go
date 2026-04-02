@@ -670,9 +670,25 @@ See [[2026-02-12-2233-05-pacman-cheatsheet]] and [[9999-99-99]].`)
 		t.Errorf("broken link target = %q, want %q", report.BrokenLinks[0].TargetID, "9999-99-99")
 	}
 
-	// No renames: old-format notes are not parsed, so never rename-checked.
-	if len(report.Renames) != 0 {
-		t.Errorf("expected 0 renames, got %d: %v", len(report.Renames), report.Renames)
+	// Old-format notes with valid dates are now flagged for rename to new format.
+	if len(report.Renames) != 2 {
+		t.Errorf("expected 2 renames, got %d: %v", len(report.Renames), report.Renames)
+	}
+
+	// Verify the renames map old filenames to new-format IDs.
+	renameMap := map[string]string{}
+	for _, rn := range report.Renames {
+		renameMap[rn.OldName] = rn.NewName
+	}
+	if got, ok := renameMap["2026-02-12-2233-05-pacman-cheatsheet.md"]; !ok {
+		t.Error("missing rename for pacman-cheatsheet")
+	} else if got != "20260212-1-pacman-cheatsheet.md" {
+		t.Errorf("pacman-cheatsheet rename = %q, want %q", got, "20260212-1-pacman-cheatsheet.md")
+	}
+	if got, ok := renameMap["2026-01-05-1200-00-old-title.md"]; !ok {
+		t.Error("missing rename for old-title")
+	} else if got != "20260105-1-new-title.md" {
+		t.Errorf("old-title rename = %q, want %q", got, "20260105-1-new-title.md")
 	}
 }
 
@@ -952,4 +968,172 @@ func TestRebuildReportString(t *testing.T) {
 			t.Errorf("String() missing rename entry")
 		}
 	})
+}
+
+func TestMaxNumFromDir(t *testing.T) {
+	tests := []struct {
+		name  string
+		files []string
+		now   time.Time
+		want  int
+	}{
+		{
+			name:  "empty dir",
+			files: nil,
+			now:   testTime,
+			want:  0,
+		},
+		{
+			name:  "one note today",
+			files: []string{"20260328-1-hello.md"},
+			now:   testTime,
+			want:  1,
+		},
+		{
+			name:  "multiple notes today",
+			files: []string{"20260328-1-a.md", "20260328-3-b.md", "20260328-2-c.md"},
+			now:   testTime,
+			want:  3,
+		},
+		{
+			name:  "notes from other dates only",
+			files: []string{"20260327-5-old.md"},
+			now:   testTime,
+			want:  0,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			dir := t.TempDir()
+			for _, name := range tt.files {
+				if err := os.WriteFile(filepath.Join(dir, name), nil, 0o644); err != nil {
+					t.Fatal(err)
+				}
+			}
+
+			got, err := MaxNumFromDir(dir, tt.now)
+			if err != nil {
+				t.Fatalf("MaxNumFromDir() err = %q", err)
+			}
+			if got != tt.want {
+				t.Errorf("MaxNumFromDir() = %d, want %d", got, tt.want)
+			}
+		})
+	}
+}
+
+func TestMaxNumFromDirNonExistent(t *testing.T) {
+	got, err := MaxNumFromDir("/tmp/gonotes-test-nonexistent-maxnum-12345", testTime)
+	if err != nil {
+		t.Fatalf("MaxNumFromDir() err = %q", err)
+	}
+	if got != 0 {
+		t.Errorf("MaxNumFromDir() = %d, want 0", got)
+	}
+}
+
+func TestScanNotesOldFormatWithDate(t *testing.T) {
+	baseDir := t.TempDir()
+	idDir := filepath.Join(baseDir, "notes", "by", "id")
+
+	// Old-format file with a valid date should be renamed to new format.
+	writeTestNote(t, idDir, "2026-03-28-1430-00-my-note.md", `---
+title: My Note
+date: 2026-03-28 14:30:00
+---
+
+Content.`)
+
+	report, err := ScanNotes(idDir)
+	if err != nil {
+		t.Fatalf("ScanNotes() err = %q", err)
+	}
+
+	if len(report.Renames) != 1 {
+		t.Fatalf("expected 1 rename, got %d: %v", len(report.Renames), report.Renames)
+	}
+
+	rn := report.Renames[0]
+	if rn.OldName != "2026-03-28-1430-00-my-note.md" {
+		t.Errorf("OldName = %q, want %q", rn.OldName, "2026-03-28-1430-00-my-note.md")
+	}
+	// Should get ID 20260328-1 since no other notes with that prefix exist.
+	if rn.NewName != "20260328-1-my-note.md" {
+		t.Errorf("NewName = %q, want %q", rn.NewName, "20260328-1-my-note.md")
+	}
+}
+
+func TestScanNotesOldFormatMultipleSameDate(t *testing.T) {
+	baseDir := t.TempDir()
+	idDir := filepath.Join(baseDir, "notes", "by", "id")
+
+	// Two old-format notes with the same date prefix.
+	writeTestNote(t, idDir, "2026-03-28-1000-00-first.md", `---
+title: First
+date: 2026-03-28 10:00:00
+---
+
+First note.`)
+
+	writeTestNote(t, idDir, "2026-03-28-1430-00-second.md", `---
+title: Second
+date: 2026-03-28 14:30:00
+---
+
+Second note.`)
+
+	report, err := ScanNotes(idDir)
+	if err != nil {
+		t.Fatalf("ScanNotes() err = %q", err)
+	}
+
+	if len(report.Renames) != 2 {
+		t.Fatalf("expected 2 renames, got %d: %v", len(report.Renames), report.Renames)
+	}
+
+	// Both should get 20260328-N IDs. Collect the new names.
+	newNames := map[string]bool{}
+	for _, rn := range report.Renames {
+		newNames[rn.NewName] = true
+	}
+
+	// They should have sequential IDs (1 and 2). The order depends on
+	// ReadDir order, so just verify both prefixes are present.
+	want1 := "20260328-1"
+	want2 := "20260328-2"
+	found1, found2 := false, false
+	for _, rn := range report.Renames {
+		if strings.HasPrefix(rn.NewName, want1+"-") {
+			found1 = true
+		}
+		if strings.HasPrefix(rn.NewName, want2+"-") {
+			found2 = true
+		}
+	}
+	if !found1 || !found2 {
+		t.Errorf("expected renames with IDs %s and %s, got %v", want1, want2, report.Renames)
+	}
+}
+
+func TestScanNotesOldFormatNoDate(t *testing.T) {
+	baseDir := t.TempDir()
+	idDir := filepath.Join(baseDir, "notes", "by", "id")
+
+	// Old-format file WITHOUT a date: should NOT be renamed.
+	writeTestNote(t, idDir, "2026-03-28-1430-00-no-date.md", `---
+title: No Date Note
+---
+
+Content without date.`)
+
+	report, err := ScanNotes(idDir)
+	if err != nil {
+		t.Fatalf("ScanNotes() err = %q", err)
+	}
+
+	if len(report.Renames) != 0 {
+		t.Errorf("expected 0 renames for old-format note without date, got %d: %v",
+			len(report.Renames), report.Renames)
+	}
 }
