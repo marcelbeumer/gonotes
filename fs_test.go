@@ -1229,3 +1229,90 @@ Tips.`)
 		t.Error("expected error for 2026-02-12-2233-05-no-date.md")
 	}
 }
+
+func TestScanNotesDuplicateIDs(t *testing.T) {
+	baseDir := t.TempDir()
+	idDir := filepath.Join(baseDir, "notes", "by", "id")
+
+	// Two files with the same ID (20260328-1).
+	writeTestNote(t, idDir, "20260328-1-foo.md", `---
+title: Foo
+date: 2026-03-28 14:30:00
+---
+
+Foo content.`)
+
+	writeTestNote(t, idDir, "20260328-1-bar.md", `---
+title: Bar
+date: 2026-03-28 15:00:00
+---
+
+Bar content.`)
+
+	report, err := ScanNotes(idDir)
+	if err != nil {
+		t.Fatalf("ScanNotes() err = %q", err)
+	}
+
+	// Expect exactly one duplicate error (the second file seen).
+	dupErrors := []ScanError{}
+	for _, e := range report.Errors {
+		if strings.Contains(e.Message, "duplicate note ID") {
+			dupErrors = append(dupErrors, e)
+		}
+	}
+	if len(dupErrors) != 1 {
+		t.Fatalf("expected 1 duplicate error, got %d: %v", len(dupErrors), dupErrors)
+	}
+	if !strings.Contains(dupErrors[0].Message, "20260328-1") {
+		t.Errorf("error message should mention the ID, got: %s", dupErrors[0].Message)
+	}
+}
+
+func TestScanNotesMultipleDuplicateIDs(t *testing.T) {
+	baseDir := t.TempDir()
+	idDir := filepath.Join(baseDir, "notes", "by", "id")
+
+	// Three files with the same ID (20260328-1).
+	writeTestNote(t, idDir, "20260328-1-aaa.md", `---
+title: Aaa
+date: 2026-03-28 10:00:00
+---
+
+Aaa.`)
+
+	writeTestNote(t, idDir, "20260328-1-bbb.md", `---
+title: Bbb
+date: 2026-03-28 11:00:00
+---
+
+Bbb.`)
+
+	writeTestNote(t, idDir, "20260328-1-ccc.md", `---
+title: Ccc
+date: 2026-03-28 12:00:00
+---
+
+Ccc.`)
+
+	report, err := ScanNotes(idDir)
+	if err != nil {
+		t.Fatalf("ScanNotes() err = %q", err)
+	}
+
+	dupErrors := []ScanError{}
+	for _, e := range report.Errors {
+		if strings.Contains(e.Message, "duplicate note ID") {
+			dupErrors = append(dupErrors, e)
+		}
+	}
+	// The first file is fine; second and third are duplicates.
+	if len(dupErrors) != 2 {
+		t.Fatalf("expected 2 duplicate errors, got %d: %v", len(dupErrors), dupErrors)
+	}
+	for _, e := range dupErrors {
+		if !strings.Contains(e.Message, "20260328-1") {
+			t.Errorf("error message should mention the ID, got: %s", e.Message)
+		}
+	}
+}

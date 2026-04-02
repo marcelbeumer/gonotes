@@ -370,6 +370,7 @@ func ScanNotes(idDir string) (*RebuildReport, error) {
 	var notes []noteInfo
 	var scanErrors []ScanError
 	maxNums := map[string]int{}
+	idSet := make(map[string]struct{})
 
 	for {
 		entries, err := f.ReadDir(readDirBatch)
@@ -423,6 +424,15 @@ func ScanNotes(idDir string) (*RebuildReport, error) {
 				continue
 			}
 
+			if _, exists := idSet[id]; exists {
+				scanErrors = append(scanErrors, ScanError{
+					Filename: name,
+					Message:  fmt.Sprintf("duplicate note ID %q", id),
+				})
+				continue
+			}
+			idSet[id] = struct{}{}
+
 			notes = append(notes, noteInfo{
 				id:            id,
 				currentName:   name,
@@ -436,12 +446,6 @@ func ScanNotes(idDir string) (*RebuildReport, error) {
 			}
 			return nil, fmt.Errorf("scan notes: read dir: %w", err)
 		}
-	}
-
-	// Build set of known IDs.
-	idSet := make(map[string]struct{}, len(notes))
-	for _, n := range notes {
-		idSet[n.id] = struct{}{}
 	}
 
 	// Sort for deterministic output.
