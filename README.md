@@ -1,6 +1,6 @@
 # gonotes
 
-A zettelkasten-inspired note-taking system backed by plain markdown files and symlinks.
+A zettelkasten-like note-taking system backed by plain markdown files and symlinks.
 
 ## Note format
 
@@ -22,7 +22,7 @@ Recognized frontmatter fields:
 - **date** -- used for `notes/by/date/` symlinks
 - **tags** -- comma-separated, may be nested (`foo/bar`); used for `notes/by/tags/` symlinks
 
-All other frontmatter fields are preserved but ignored by the tool.
+All other frontmatter fields are preserved but ignored.
 
 ## ID format
 
