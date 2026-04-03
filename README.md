@@ -62,6 +62,7 @@ Commands:
   new        Create a new note
   folder     Create a new folder for file storage
   rebuild    Scan notes, report issues, rename files, rebuild symlinks
+  lsp        Start the LSP server (stdio)
 ```
 
 **new** creates a note, writes it to `notes/by/id/`, and sets up symlinks:
@@ -97,5 +98,42 @@ note IDs and files under `files/`:
 ```
 gonotes rebuild     # interactive prompts
 gonotes rebuild -y  # skip prompts
+```
+
+**lsp** starts a Language Server Protocol server on stdin/stdout. It supports
+go-to-definition on `[[wiki-links]]` and find-references on wiki-links,
+frontmatter tags, and frontmatter titles:
+
+```
+gonotes lsp              # nested tag matching (default)
+gonotes lsp -flat-tags   # flat tag matching
+```
+
+Go-to-definition on a `[[20260328-1]]` link jumps to the target note file
+(e.g. `20260328-1-my-note.md`). Links with slugs like `[[20260328-1-my-note]]`
+resolve to the same target.
+
+Find-references has three modes depending on cursor position:
+
+- **On a `[[wiki-link]]`**: finds all notes that link to the same target ID.
+- **On a tag in `tags:`**: finds all notes with that tag. In nested mode
+  (default), the full tag path is matched via `notes/by/tags/nested/`. In flat
+  mode (`-flat-tags`), the individual path segment under the cursor is matched
+  via `notes/by/tags/flat/`.
+- **On the `title:` line**: finds all notes that link to the current file.
+
+Example Neovim configuration:
+
+```lua
+vim.api.nvim_create_autocmd("FileType", {
+  pattern = "markdown",
+  callback = function(ev)
+    vim.lsp.start({
+      name = "gonotes",
+      cmd = { "gonotes", "lsp", "-flat-tags" },
+      root_dir = vim.fs.root(ev.buf, { ".git" }),
+    })
+  end,
+})
 ```
 

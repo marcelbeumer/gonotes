@@ -20,6 +20,7 @@ Commands:
   new        Create a new note
   folder     Create a new folder for file storage
   rebuild    Scan notes, report issues, rename files, rebuild symlinks
+  lsp        Start the LSP server (stdio)
 `
 
 func main() {
@@ -36,6 +37,11 @@ func main() {
 		err = runFolder(os.Args[2:])
 	case "rebuild":
 		err = runRebuild(os.Args[2:])
+	case "lsp":
+		err = runLSP(os.Args[2:])
+	case "-h", "-help", "--help":
+		fmt.Fprint(os.Stderr, usage)
+		os.Exit(0)
 	default:
 		fmt.Fprintf(os.Stderr, "unknown command: %s\n", os.Args[1])
 		fmt.Fprint(os.Stderr, usage)
@@ -254,6 +260,30 @@ Flags:
 	fmt.Fprintln(os.Stderr, "Symlinks rebuilt.")
 
 	return nil
+}
+
+func runLSP(args []string) error {
+	fs := flag.NewFlagSet("lsp", flag.ContinueOnError)
+	flatTags := fs.Bool("flat-tags", false, "use flat tag matching (cursor selects individual path segment)")
+
+	fs.Usage = func() {
+		fmt.Fprintf(os.Stderr, `Usage: gonotes lsp [flags]
+
+Start the LSP server on stdin/stdout.
+
+Flags:
+`)
+		fs.PrintDefaults()
+	}
+
+	if err := fs.Parse(args); err != nil {
+		return err
+	}
+
+	opts := gonotes.LSPOptions{
+		FlatTags: *flatTags,
+	}
+	return gonotes.ServeLSP(os.Stdin, os.Stdout, opts)
 }
 
 var stdinScanner = bufio.NewScanner(os.Stdin)
