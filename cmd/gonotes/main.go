@@ -17,11 +17,13 @@ import (
 const usage = `Usage: gonotes <command> [flags]
 
 Commands:
-  id         Print the next available note ID
   new        Create a new note
   folder     Create a new folder for file storage
-  prepare    Prepare a note: merge frontmatter fields, output to stdout
   rebuild    Scan notes, report issues, rename files, rebuild symlinks
+
+Scripting/debug:
+  id         Print the next available note ID
+  prepare    Prepare a note: merge frontmatter fields, output to stdout
 `
 
 func main() {

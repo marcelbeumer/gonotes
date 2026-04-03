@@ -59,11 +59,13 @@ files/20260403-1-contract-pdfs/doc2.pdf
 gonotes <command> [flags]
 
 Commands:
-  id         Print the next available note ID
   new        Create a new note
   folder     Create a new folder for file storage
-  prepare    Prepare a note: merge frontmatter fields, output to stdout
   rebuild    Scan notes, report issues, rename files, rebuild symlinks
+
+Scripting/debug:
+  id         Print the next available note ID
+  prepare    Prepare a note: merge frontmatter fields, output to stdout
 ```
 
 **new** creates a note, writes it to `notes/by/id/`, and sets up symlinks:
@@ -77,13 +79,6 @@ gonotes new -n                # dry run
 
 Flags: `-t` title, `-T` tags, `-d` date (default: now), `-i` id (default: generate),
 `-f` file, `-` read from stdin, `-o md|json` (dry run output), `-n` dry run.
-
-**prepare** reads a note, merges frontmatter fields, and writes to stdout:
-
-```
-gonotes prepare -t "New Title" -f note.md
-gonotes prepare -T "new-tag" -o json -
-```
 
 **folder** creates a new directory under `files/` for storing files. The folder
 name follows the same ID format as notes (`yyyymmdd-N-slug`):
@@ -106,4 +101,13 @@ note IDs and files under `files/`:
 ```
 gonotes rebuild     # interactive prompts
 gonotes rebuild -y  # skip prompts
+```
+
+**Scripting/debug commands:**
+
+**prepare** reads a note, merges frontmatter fields, and writes to stdout:
+
+```
+gonotes prepare -t "New Title" -f note.md
+gonotes prepare -T "new-tag" -o json -
 ```
