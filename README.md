@@ -62,10 +62,6 @@ Commands:
   new        Create a new note
   folder     Create a new folder for file storage
   rebuild    Scan notes, report issues, rename files, rebuild symlinks
-
-Scripting/debug:
-  id         Print the next available note ID
-  prepare    Prepare a note: merge frontmatter fields, output to stdout
 ```
 
 **new** creates a note, writes it to `notes/by/id/`, and sets up symlinks:
@@ -103,11 +99,3 @@ gonotes rebuild     # interactive prompts
 gonotes rebuild -y  # skip prompts
 ```
 
-**Scripting/debug commands:**
-
-**prepare** reads a note, merges frontmatter fields, and writes to stdout:
-
-```
-gonotes prepare -t "New Title" -f note.md
-gonotes prepare -T "new-tag" -o json -
-```

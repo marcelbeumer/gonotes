@@ -20,10 +20,6 @@ Commands:
   new        Create a new note
   folder     Create a new folder for file storage
   rebuild    Scan notes, report issues, rename files, rebuild symlinks
-
-Scripting/debug:
-  id         Print the next available note ID
-  prepare    Prepare a note: merge frontmatter fields, output to stdout
 `
 
 func main() {
@@ -34,14 +30,10 @@ func main() {
 
 	var err error
 	switch os.Args[1] {
-	case "id":
-		err = runID()
 	case "new":
 		err = runNew(os.Args[2:])
 	case "folder":
 		err = runFolder(os.Args[2:])
-	case "prepare":
-		err = runPrepare(os.Args[2:])
 	case "rebuild":
 		err = runRebuild(os.Args[2:])
 	default:
@@ -56,100 +48,6 @@ func main() {
 		}
 		fmt.Fprintf(os.Stderr, "error: %v\n", err)
 		os.Exit(1)
-	}
-}
-
-func runPrepare(args []string) error {
-	// Pull out bare "-" (stdin marker) before flag parsing, since flag.Parse
-	// stops at the first non-flag argument.
-	readStdin := false
-	var flagArgs []string
-	for _, a := range args {
-		if a == "-" {
-			readStdin = true
-		} else {
-			flagArgs = append(flagArgs, a)
-		}
-	}
-
-	fs := flag.NewFlagSet("prepare", flag.ContinueOnError)
-
-	title := fs.String("t", "", "set title")
-	tags := fs.String("T", "", "set tags (comma-separated)")
-	date := fs.String("d", "", "set date (default: now)")
-	file := fs.String("f", "", "read note from file")
-	output := fs.String("o", "md", "output format: md or json")
-
-	fs.Usage = func() {
-		fmt.Fprintf(os.Stderr, `Usage: gonotes prepare [flags] [-]
-
-Read a note, merge frontmatter fields, and write the result to stdout.
-
-Input sources (at most one):
-  -           read from stdin
-  -f file     read from file
-  (none)      start with an empty note
-
-Flags:
-`)
-		fs.PrintDefaults()
-	}
-
-	if err := fs.Parse(flagArgs); err != nil {
-		return err
-	}
-
-	if readStdin && *file != "" {
-		return fmt.Errorf("cannot use both stdin (-) and -f")
-	}
-
-	var r io.Reader
-	switch {
-	case readStdin:
-		r = os.Stdin
-	case *file != "":
-		f, err := os.Open(*file)
-		if err != nil {
-			return err
-		}
-		defer f.Close()
-		r = f
-	}
-
-	// Build options; only set pointers for flags that were explicitly provided.
-	opts := gonotes.PrepareOptions{}
-	fs.Visit(func(f *flag.Flag) {
-		switch f.Name {
-		case "t":
-			opts.Title = title
-		case "T":
-			opts.Tags = tags
-		case "d":
-			opts.Date = date
-		}
-	})
-
-	if *output != "md" && *output != "json" {
-		return fmt.Errorf("unknown output format: %q (use md or json)", *output)
-	}
-
-	note, err := gonotes.Prepare(r, opts)
-	if err != nil {
-		return err
-	}
-
-	switch *output {
-	case "json":
-		b, err := note.JSON()
-		if err != nil {
-			return err
-		}
-		b = append(b, '\n')
-		_, err = os.Stdout.Write(b)
-		return err
-	default:
-		_, err = fmt.Fprint(os.Stdout, note.Markdown())
-		return err
 	}
 }
 
@@ -262,22 +160,6 @@ Flags:
 
 	// Normal mode: print the path of the created file.
 	fmt.Fprintln(os.Stdout, filepath.Join(baseDir, plan.WritePath))
-	return nil
-}
-
-func runID() error {
-	baseDir, err := os.Getwd()
-	if err != nil {
-		return fmt.Errorf("get working directory: %w", err)
-	}
-
-	idDir := filepath.Join(baseDir, "notes", "by", "id")
-	id, err := gonotes.NextID(idDir, time.Now())
-	if err != nil {
-		return err
-	}
-
-	fmt.Fprintln(os.Stdout, id)
 	return nil
 }
 
