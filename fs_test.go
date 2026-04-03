@@ -116,6 +116,92 @@ func TestNoteFilename(t *testing.T) {
 	}
 }
 
+func TestFolderName(t *testing.T) {
+	tests := []struct {
+		id, slug, want string
+	}{
+		{"20260403-1", "contract-pdfs", "20260403-1-contract-pdfs"},
+		{"20260403-1", "", "20260403-1"},
+		{"20260101-42", "a", "20260101-42-a"},
+	}
+
+	for _, tt := range tests {
+		got := FolderName(tt.id, tt.slug)
+		if got != tt.want {
+			t.Errorf("FolderName(%q, %q) = %q, want %q", tt.id, tt.slug, got, tt.want)
+		}
+	}
+}
+
+func TestCreateFolder(t *testing.T) {
+	baseDir := t.TempDir()
+	now := func() time.Time {
+		return time.Date(2026, 4, 3, 10, 0, 0, 0, time.UTC)
+	}
+
+	path, err := CreateFolder(baseDir, "Contract PDFs", now)
+	if err != nil {
+		t.Fatalf("CreateFolder() err = %q", err)
+	}
+
+	wantDir := filepath.Join(baseDir, "files", "20260403-1-contract-pdfs")
+	if path != wantDir {
+		t.Errorf("CreateFolder() = %q, want %q", path, wantDir)
+	}
+
+	info, err := os.Stat(path)
+	if err != nil {
+		t.Fatalf("created directory does not exist: %v", err)
+	}
+	if !info.IsDir() {
+		t.Errorf("created path is not a directory")
+	}
+}
+
+func TestCreateFolderSequentialIDs(t *testing.T) {
+	baseDir := t.TempDir()
+	now := func() time.Time {
+		return time.Date(2026, 4, 3, 10, 0, 0, 0, time.UTC)
+	}
+
+	path1, err := CreateFolder(baseDir, "First", now)
+	if err != nil {
+		t.Fatalf("CreateFolder(1) err = %q", err)
+	}
+
+	path2, err := CreateFolder(baseDir, "Second", now)
+	if err != nil {
+		t.Fatalf("CreateFolder(2) err = %q", err)
+	}
+
+	want1 := filepath.Join(baseDir, "files", "20260403-1-first")
+	want2 := filepath.Join(baseDir, "files", "20260403-2-second")
+
+	if path1 != want1 {
+		t.Errorf("first folder = %q, want %q", path1, want1)
+	}
+	if path2 != want2 {
+		t.Errorf("second folder = %q, want %q", path2, want2)
+	}
+}
+
+func TestCreateFolderNoTitle(t *testing.T) {
+	baseDir := t.TempDir()
+	now := func() time.Time {
+		return time.Date(2026, 4, 3, 10, 0, 0, 0, time.UTC)
+	}
+
+	path, err := CreateFolder(baseDir, "", now)
+	if err != nil {
+		t.Fatalf("CreateFolder() err = %q", err)
+	}
+
+	wantDir := filepath.Join(baseDir, "files", "20260403-1")
+	if path != wantDir {
+		t.Errorf("CreateFolder() = %q, want %q", path, wantDir)
+	}
+}
+
 func TestWriteNote(t *testing.T) {
 	dir := t.TempDir()
 
@@ -579,7 +665,7 @@ date: 2026-03-28 16:00:00
 
 Plain note.`)
 
-	report, err := ScanNotes(idDir)
+	report, err := ScanNotes(baseDir)
 	if err != nil {
 		t.Fatalf("ScanNotes() err = %q", err)
 	}
@@ -615,7 +701,7 @@ title: Hello
 
 No links.`)
 
-	report, err := ScanNotes(idDir)
+	report, err := ScanNotes(baseDir)
 	if err != nil {
 		t.Fatalf("ScanNotes() err = %q", err)
 	}
@@ -625,6 +711,107 @@ No links.`)
 	}
 	if len(report.Renames) != 0 {
 		t.Errorf("expected 0 renames, got %d", len(report.Renames))
+	}
+}
+
+func TestScanNotesFileLinks(t *testing.T) {
+	baseDir := t.TempDir()
+	idDir := filepath.Join(baseDir, "notes", "by", "id")
+	filesDir := filepath.Join(baseDir, "files")
+
+	// Create a folder with a file in it.
+	folderPath := filepath.Join(filesDir, "20260403-1-contract-pdfs")
+	if err := os.MkdirAll(folderPath, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(folderPath, "doc1.pdf"), []byte("pdf"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	// Note that links to existing file (not broken) and non-existent file (broken).
+	writeTestNote(t, idDir, "20260403-1-hello.md", `---
+title: Hello
+date: 2026-04-03 10:00:00
+---
+
+See [[20260403-1-contract-pdfs/doc1.pdf]] and [[20260403-1-contract-pdfs/bad.pdf]].`)
+
+	report, err := ScanNotes(baseDir)
+	if err != nil {
+		t.Fatalf("ScanNotes() err = %q", err)
+	}
+
+	// Only the bad.pdf link should be broken.
+	if len(report.BrokenLinks) != 1 {
+		t.Fatalf("expected 1 broken link, got %d: %v", len(report.BrokenLinks), report.BrokenLinks)
+	}
+	bl := report.BrokenLinks[0]
+	if bl.SourceID != "20260403-1" {
+		t.Errorf("broken link source = %q, want %q", bl.SourceID, "20260403-1")
+	}
+	if bl.TargetID != "20260403-1-contract-pdfs/bad.pdf" {
+		t.Errorf("broken link target = %q, want %q", bl.TargetID, "20260403-1-contract-pdfs/bad.pdf")
+	}
+}
+
+func TestScanNotesFileLinksNoFilesDir(t *testing.T) {
+	baseDir := t.TempDir()
+	idDir := filepath.Join(baseDir, "notes", "by", "id")
+
+	// Note links to a file path, but no files/ directory exists at all.
+	writeTestNote(t, idDir, "20260403-1-hello.md", `---
+title: Hello
+date: 2026-04-03 10:00:00
+---
+
+See [[20260403-1-docs/readme.txt]].`)
+
+	report, err := ScanNotes(baseDir)
+	if err != nil {
+		t.Fatalf("ScanNotes() err = %q", err)
+	}
+
+	if len(report.BrokenLinks) != 1 {
+		t.Fatalf("expected 1 broken link, got %d: %v", len(report.BrokenLinks), report.BrokenLinks)
+	}
+}
+
+func TestScanNotesFileLinkAndNoteLink(t *testing.T) {
+	baseDir := t.TempDir()
+	idDir := filepath.Join(baseDir, "notes", "by", "id")
+	filesDir := filepath.Join(baseDir, "files")
+
+	// Create a file.
+	folderPath := filepath.Join(filesDir, "20260403-1-docs")
+	if err := os.MkdirAll(folderPath, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(folderPath, "spec.pdf"), []byte("pdf"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	// Note 1 links to note 2 (exists) and to a file (exists).
+	writeTestNote(t, idDir, "20260403-1-hello.md", `---
+title: Hello
+date: 2026-04-03 10:00:00
+---
+
+See [[20260403-2]] and [[20260403-1-docs/spec.pdf]].`)
+
+	writeTestNote(t, idDir, "20260403-2-world.md", `---
+title: World
+date: 2026-04-03 11:00:00
+---
+
+Hello.`)
+
+	report, err := ScanNotes(baseDir)
+	if err != nil {
+		t.Fatalf("ScanNotes() err = %q", err)
+	}
+
+	if len(report.BrokenLinks) != 0 {
+		t.Errorf("expected 0 broken links, got %d: %v", len(report.BrokenLinks), report.BrokenLinks)
 	}
 }
 
@@ -657,7 +844,7 @@ date: 2026-03-28 14:30:00
 
 See [[2026-02-12-2233-05-pacman-cheatsheet]] and [[9999-99-99]].`)
 
-	report, err := ScanNotes(idDir)
+	report, err := ScanNotes(baseDir)
 	if err != nil {
 		t.Fatalf("ScanNotes() err = %q", err)
 	}
@@ -710,7 +897,7 @@ title: Readme
 
 Some info.`)
 
-	report, err := ScanNotes(idDir)
+	report, err := ScanNotes(baseDir)
 	if err != nil {
 		t.Fatalf("ScanNotes() err = %q", err)
 	}
@@ -747,7 +934,7 @@ date: 2026-03-28 14:30:00
 
 No title here.`)
 
-	report, err := ScanNotes(idDir)
+	report, err := ScanNotes(baseDir)
 	if err != nil {
 		t.Fatalf("ScanNotes() err = %q", err)
 	}
@@ -1070,7 +1257,7 @@ date: 2026-03-28 14:30:00
 
 Content.`)
 
-	report, err := ScanNotes(idDir)
+	report, err := ScanNotes(baseDir)
 	if err != nil {
 		t.Fatalf("ScanNotes() err = %q", err)
 	}
@@ -1108,7 +1295,7 @@ date: 2026-03-28 14:30:00
 
 Second note.`)
 
-	report, err := ScanNotes(idDir)
+	report, err := ScanNotes(baseDir)
 	if err != nil {
 		t.Fatalf("ScanNotes() err = %q", err)
 	}
@@ -1152,7 +1339,7 @@ title: No Date Note
 
 Content without date.`)
 
-	report, err := ScanNotes(idDir)
+	report, err := ScanNotes(baseDir)
 	if err != nil {
 		t.Fatalf("ScanNotes() err = %q", err)
 	}
@@ -1202,7 +1389,7 @@ title: No Date
 
 Tips.`)
 
-	report, err := ScanNotes(idDir)
+	report, err := ScanNotes(baseDir)
 	if err != nil {
 		t.Fatalf("ScanNotes() err = %q", err)
 	}
@@ -1249,7 +1436,7 @@ date: 2026-03-28 15:00:00
 
 Bar content.`)
 
-	report, err := ScanNotes(idDir)
+	report, err := ScanNotes(baseDir)
 	if err != nil {
 		t.Fatalf("ScanNotes() err = %q", err)
 	}
@@ -1295,7 +1482,7 @@ date: 2026-03-28 12:00:00
 
 Ccc.`)
 
-	report, err := ScanNotes(idDir)
+	report, err := ScanNotes(baseDir)
 	if err != nil {
 		t.Fatalf("ScanNotes() err = %q", err)
 	}

@@ -42,6 +42,13 @@ notes/by/tags/flat/programming/20260328-1-my-note.md
 notes/by/tags/flat/go/20260328-1-my-note.md
 ```
 
+Files are stored in `files/` using ID-based folder names:
+
+```
+files/20260403-1-contract-pdfs/doc1.pdf
+files/20260403-1-contract-pdfs/doc2.pdf
+```
+
 ## Usage
 
 ```
@@ -50,6 +57,7 @@ gonotes <command> [flags]
 Commands:
   id         Print the next available note ID
   new        Create a new note
+  folder     Create a new folder for file storage
   prepare    Prepare a note: merge frontmatter fields, output to stdout
   rebuild    Scan notes, report issues, rename files, rebuild symlinks
 ```
@@ -73,8 +81,23 @@ gonotes prepare -t "New Title" -f note.md
 gonotes prepare -T "new-tag" -o json -
 ```
 
+**folder** creates a new directory under `files/` for storing files. The folder
+name follows the same ID format as notes (`yyyymmdd-N-slug`):
+
+```
+gonotes folder -t "Contract PDFs"   # creates files/20260403-1-contract-pdfs/
+gonotes folder                      # creates files/20260403-1/
+```
+
+Files can be referenced from notes using wiki-links:
+
+```
+See [[20260403-1-contract-pdfs/doc1.pdf]].
+```
+
 **rebuild** scans `notes/by/id/`, reports broken links and filename mismatches,
-renames files, and rebuilds all symlinks:
+renames files, and rebuilds all symlinks. Link targets are checked against both
+note IDs and files under `files/`:
 
 ```
 gonotes rebuild        # interactive prompts

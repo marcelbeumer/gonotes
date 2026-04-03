@@ -55,4 +55,17 @@ enough to just fit it in fs.go, such separation may only confuse...
 
 ## Plan
 
-Let's fill in this section together.
+Done.
+
+1. Added `FolderName(id, slug)` in fs.go -- returns `id-slug` directory name.
+2. Added `CreateFolder(baseDir, title, now)` in fs.go -- generates next ID from
+   `files/` dir, creates `files/yyyymmdd-N-slug/`.
+3. Changed `ScanNotes(idDir)` to `ScanNotes(baseDir)` -- derives `idDir` and
+   `filesDir` internally.
+4. Extended broken-link checking -- after failing note ID lookup, does
+   `os.Stat(files/<target>)`. Targets with `/` skip note ID normalization.
+5. Added `gonotes folder [-t title]` command in main.go.
+6. Tests: `TestFolderName`, `TestCreateFolder`, `TestCreateFolderSequentialIDs`,
+   `TestCreateFolderNoTitle`, `TestScanNotesFileLinks`,
+   `TestScanNotesFileLinksNoFilesDir`, `TestScanNotesFileLinkAndNoteLink`.
+7. Updated README.md with folder command docs and file storage docs.

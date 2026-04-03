@@ -89,6 +89,15 @@ func NoteFilename(id, slug string) string {
 	return id + "-" + slug + ".md"
 }
 
+// FolderName returns the directory name for a file folder given its ID and slug.
+// If slug is empty, the name is just <id>.
+func FolderName(id, slug string) string {
+	if slug == "" {
+		return id
+	}
+	return id + "-" + slug
+}
+
 // WriteNote writes the note's markdown to dir/<filename> and returns the full
 // path. The directory is created if it does not exist.
 func WriteNote(dir string, note *Note) (string, error) {
@@ -265,6 +274,29 @@ func CreateNote(baseDir string, r io.Reader, opts PrepareOptions, id string, dry
 	return note, plan, nil
 }
 
+// CreateFolder creates a new folder under baseDir/files/ for storing files.
+// The folder name follows the same ID format as notes: yyyymmdd-N-slug.
+// If title is empty, no slug is appended. Returns the absolute path of the
+// created directory.
+func CreateFolder(baseDir, title string, now func() time.Time) (string, error) {
+	filesDir := filepath.Join(baseDir, "files")
+
+	id, err := NextID(filesDir, now())
+	if err != nil {
+		return "", fmt.Errorf("create folder: %w", err)
+	}
+
+	slug := slugify(title)
+	name := FolderName(id, slug)
+	absPath := filepath.Join(filesDir, name)
+
+	if err := os.MkdirAll(absPath, 0o755); err != nil {
+		return "", fmt.Errorf("create folder: %w", err)
+	}
+
+	return absPath, nil
+}
+
 // IDFromFilename extracts the note ID from a filename.
 // It returns the ID and whether a structured ID was found (parsed).
 //
@@ -351,8 +383,12 @@ func (r *RebuildReport) String() string {
 }
 
 // ScanNotes reads notes/by/id/ one file at a time and produces a report of
-// broken internal links and filenames that need renaming.
-func ScanNotes(idDir string) (*RebuildReport, error) {
+// broken internal links and filenames that need renaming. Link targets are
+// checked against both note IDs and files under files/.
+func ScanNotes(baseDir string) (*RebuildReport, error) {
+	idDir := filepath.Join(baseDir, "notes", "by", "id")
+	filesDir := filepath.Join(baseDir, "files")
+
 	f, err := os.Open(idDir)
 	if err != nil {
 		return nil, fmt.Errorf("scan notes: %w", err)
@@ -458,20 +494,31 @@ func ScanNotes(idDir string) (*RebuildReport, error) {
 	}
 
 	for _, n := range notes {
-		// Check for broken links.
+		// Check for broken links. A target is resolved by first checking
+		// the note ID set, then checking if a file exists under files/.
 		for _, target := range n.internalLinks {
-			// Try to extract a yyyymmdd-num ID, then fall back to
-			// the raw target string.
+			// Try to extract a yyyymmdd-num ID from the target.
+			// Only normalize when the target has no path separator,
+			// since paths like "20260403-1-docs/file.pdf" are file
+			// references, not note IDs.
 			targetID := target
-			if m := reIDPrefix.FindStringSubmatch(target); m != nil {
-				targetID = m[1] + "-" + m[2]
+			if !strings.Contains(target, "/") {
+				if m := reIDPrefix.FindStringSubmatch(target); m != nil {
+					targetID = m[1] + "-" + m[2]
+				}
 			}
-			if _, exists := idSet[targetID]; !exists {
-				report.BrokenLinks = append(report.BrokenLinks, BrokenLink{
-					SourceID: n.id,
-					TargetID: targetID,
-				})
+			if _, exists := idSet[targetID]; exists {
+				continue
 			}
+			// Check if the target resolves to a file under files/.
+			filePath := filepath.Join(filesDir, target)
+			if _, err := os.Stat(filePath); err == nil {
+				continue
+			}
+			report.BrokenLinks = append(report.BrokenLinks, BrokenLink{
+				SourceID: n.id,
+				TargetID: target,
+			})
 		}
 
 		// Check for renames.

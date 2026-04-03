@@ -19,6 +19,7 @@ const usage = `Usage: gonotes <command> [flags]
 Commands:
   id         Print the next available note ID
   new        Create a new note
+  folder     Create a new folder for file storage
   prepare    Prepare a note: merge frontmatter fields, output to stdout
   rebuild    Scan notes, report issues, rename files, rebuild symlinks
 `
@@ -35,6 +36,8 @@ func main() {
 		err = runID()
 	case "new":
 		err = runNew(os.Args[2:])
+	case "folder":
+		err = runFolder(os.Args[2:])
 	case "prepare":
 		err = runPrepare(os.Args[2:])
 	case "rebuild":
@@ -276,6 +279,39 @@ func runID() error {
 	return nil
 }
 
+func runFolder(args []string) error {
+	fs := flag.NewFlagSet("folder", flag.ContinueOnError)
+	title := fs.String("t", "", "set title (optional)")
+
+	fs.Usage = func() {
+		fmt.Fprintf(os.Stderr, `Usage: gonotes folder [flags]
+
+Create a new folder under files/ for file storage. The folder name follows
+the same ID format as notes: yyyymmdd-N-slug.
+
+Flags:
+`)
+		fs.PrintDefaults()
+	}
+
+	if err := fs.Parse(args); err != nil {
+		return err
+	}
+
+	baseDir, err := os.Getwd()
+	if err != nil {
+		return fmt.Errorf("get working directory: %w", err)
+	}
+
+	path, err := gonotes.CreateFolder(baseDir, *title, time.Now)
+	if err != nil {
+		return err
+	}
+
+	fmt.Fprintln(os.Stdout, path)
+	return nil
+}
+
 func runRebuild(args []string) error {
 	fs := flag.NewFlagSet("rebuild", flag.ContinueOnError)
 	confirm := fs.Bool("y", false, "skip confirmation prompts")
@@ -303,7 +339,7 @@ Flags:
 	idDir := filepath.Join(baseDir, "notes", "by", "id")
 
 	// Phase 1: Scan and report.
-	report, err := gonotes.ScanNotes(idDir)
+	report, err := gonotes.ScanNotes(baseDir)
 	if err != nil {
 		return err
 	}
