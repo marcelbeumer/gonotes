@@ -16,6 +16,16 @@ import (
 // reIDPrefix matches the note ID format: yyyymmdd-num.
 var reIDPrefix = regexp.MustCompile(`^(\d{8})-(\d+)`)
 
+// matchesAny reports whether target matches any of the given glob patterns.
+func matchesAny(target string, patterns []string) bool {
+	for _, p := range patterns {
+		if matched, _ := filepath.Match(p, target); matched {
+			return true
+		}
+	}
+	return false
+}
+
 const readDirBatch = 256
 
 func MaxNumFromDir(dir string, now time.Time) (int, error) {
@@ -401,6 +411,7 @@ func ScanNotes(baseDir string) (*RebuildReport, error) {
 		currentName   string
 		correctName   string
 		internalLinks []string
+		ignoreLinks   []string
 	}
 
 	var notes []noteInfo
@@ -474,6 +485,7 @@ func ScanNotes(baseDir string) (*RebuildReport, error) {
 				currentName:   name,
 				correctName:   correctName,
 				internalLinks: note.InternalLinks,
+				ignoreLinks:   note.IgnoreLinks,
 			})
 		}
 		if err != nil {
@@ -497,6 +509,9 @@ func ScanNotes(baseDir string) (*RebuildReport, error) {
 		// Check for broken links. A target is resolved by first checking
 		// the note ID set, then checking if a file exists under files/.
 		for _, target := range n.internalLinks {
+			if matchesAny(target, n.ignoreLinks) {
+				continue
+			}
 			// Try to extract a yyyymmdd-num ID from the target.
 			// Only normalize when the target has no path separator,
 			// since paths like "20260403-1-docs/file.pdf" are file

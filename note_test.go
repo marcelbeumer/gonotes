@@ -565,3 +565,47 @@ func TestJSONOmitsEmptyFields(t *testing.T) {
 		t.Error("expected frontmatter to be present")
 	}
 }
+
+func TestReadNoteIgnoreLinks(t *testing.T) {
+	tests := []struct {
+		name  string
+		input string
+		want  []string
+	}{
+		{
+			name: "single pattern",
+			input: `---
+ignore-links: 20260403-99
+---
+
+See [[20260403-99]].`,
+			want: []string{"20260403-99"},
+		},
+		{
+			name: "multiple patterns",
+			input: `---
+ignore-links: 20260403-99, some-folder/*
+---
+
+See [[20260403-99]] and [[some-folder/doc.pdf]].`,
+			want: []string{"20260403-99", "some-folder/*"},
+		},
+		{
+			name:  "no ignore-links",
+			input: "Just body.",
+			want:  nil,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			note, err := ReadNote("test", strings.NewReader(tt.input))
+			if err != nil {
+				t.Fatalf("ReadNote() err = %q", err)
+			}
+			if diff := cmp.Diff(tt.want, note.IgnoreLinks); diff != "" {
+				t.Errorf("IgnoreLinks mismatch (-want +got):\n%s", diff)
+			}
+		})
+	}
+}

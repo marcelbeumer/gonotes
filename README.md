@@ -21,6 +21,10 @@ Recognized frontmatter fields:
 - **title** -- used for the filename slug and symlinks
 - **date** -- used for `notes/by/date/` symlinks
 - **tags** -- comma-separated, may be nested (`foo/bar`); used for `notes/by/tags/` symlinks
+- **ignore-links** -- comma-separated glob patterns; matching `[[link]]` targets
+  are excluded from broken-link checking during `rebuild`. Patterns use
+  `filepath.Match` syntax (`*` matches within a single path segment, `?` matches
+  one character). Example: `ignore-links: 20260403-99, drafts/*`
 
 All other frontmatter fields are preserved but ignored.
 

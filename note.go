@@ -25,6 +25,7 @@ type Note struct {
 	Tags          []string
 	Body          string
 	InternalLinks []string
+	IgnoreLinks   []string // glob patterns from ignore-links frontmatter
 }
 
 func NewNote() *Note {
@@ -70,6 +71,10 @@ func ReadNote(id string, r io.Reader) (*Note, error) {
 			return note, fmt.Errorf("parse date %q: %w", dateStr, err)
 		}
 		note.Date = t
+	}
+
+	if ignoreLinks, ok := note.Frontmatter.Get("ignore-links"); ok {
+		note.IgnoreLinks = parseTags(ignoreLinks)
 	}
 
 	note.InternalLinks = parseInternalLinks(body)

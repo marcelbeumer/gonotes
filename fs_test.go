@@ -815,6 +815,80 @@ Hello.`)
 	}
 }
 
+func TestScanNotesIgnoreLinksExact(t *testing.T) {
+	baseDir := t.TempDir()
+	idDir := filepath.Join(baseDir, "notes", "by", "id")
+
+	writeTestNote(t, idDir, "20260403-1-hello.md", `---
+title: Hello
+date: 2026-04-03 10:00:00
+ignore-links: 20260403-99
+---
+
+See [[20260403-99]] and [[20260403-88]].`)
+
+	report, err := ScanNotes(baseDir)
+	if err != nil {
+		t.Fatalf("ScanNotes() err = %q", err)
+	}
+
+	// 20260403-99 is ignored, only 20260403-88 should be broken.
+	if len(report.BrokenLinks) != 1 {
+		t.Fatalf("expected 1 broken link, got %d: %v", len(report.BrokenLinks), report.BrokenLinks)
+	}
+	if report.BrokenLinks[0].TargetID != "20260403-88" {
+		t.Errorf("broken link target = %q, want %q", report.BrokenLinks[0].TargetID, "20260403-88")
+	}
+}
+
+func TestScanNotesIgnoreLinksGlob(t *testing.T) {
+	baseDir := t.TempDir()
+	idDir := filepath.Join(baseDir, "notes", "by", "id")
+
+	writeTestNote(t, idDir, "20260403-1-hello.md", `---
+title: Hello
+date: 2026-04-03 10:00:00
+ignore-links: some-folder/*
+---
+
+See [[some-folder/doc.pdf]] and [[other-folder/doc.pdf]].`)
+
+	report, err := ScanNotes(baseDir)
+	if err != nil {
+		t.Fatalf("ScanNotes() err = %q", err)
+	}
+
+	// some-folder/doc.pdf is ignored, other-folder/doc.pdf is broken.
+	if len(report.BrokenLinks) != 1 {
+		t.Fatalf("expected 1 broken link, got %d: %v", len(report.BrokenLinks), report.BrokenLinks)
+	}
+	if report.BrokenLinks[0].TargetID != "other-folder/doc.pdf" {
+		t.Errorf("broken link target = %q, want %q", report.BrokenLinks[0].TargetID, "other-folder/doc.pdf")
+	}
+}
+
+func TestScanNotesIgnoreLinksAll(t *testing.T) {
+	baseDir := t.TempDir()
+	idDir := filepath.Join(baseDir, "notes", "by", "id")
+
+	writeTestNote(t, idDir, "20260403-1-hello.md", `---
+title: Hello
+date: 2026-04-03 10:00:00
+ignore-links: 20260403-99, 20260403-88
+---
+
+See [[20260403-99]] and [[20260403-88]].`)
+
+	report, err := ScanNotes(baseDir)
+	if err != nil {
+		t.Fatalf("ScanNotes() err = %q", err)
+	}
+
+	if len(report.BrokenLinks) != 0 {
+		t.Errorf("expected 0 broken links, got %d: %v", len(report.BrokenLinks), report.BrokenLinks)
+	}
+}
+
 func TestScanNotesOldFormat(t *testing.T) {
 	baseDir := t.TempDir()
 	idDir := filepath.Join(baseDir, "notes", "by", "id")
