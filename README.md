@@ -99,12 +99,3 @@ gonotes rebuild     # interactive prompts
 gonotes rebuild -y  # skip prompts
 ```
 
-## Managing tags with CLI tools
-
-- Replace: `sed -i -E '/^tags:/s/\bprogramming\/go\b/coding\/golang/g' notes/by/id/*.md`
-- Remove: `sed -i -E '/^tags:/s/\bbacklog\/p1\b\s*,?\s*//' notes/by/id/*.md`
-- Remove all: `sed -i -E '/^tags:/d' notes/by/id/20260328-1-my-note.md`
-
-To dry-run drop `-i`, add `-n` and append `p` to the `s` command: `sed -n -E '/^tags:/s/\bprogramming\/go\b/coding\/golang/gp' notes/by/id/*.md`.
-
-Built-in tools for updating notes coming soon.
