@@ -744,6 +744,496 @@ func TestServeLSP_ReferencesFlat(t *testing.T) {
 	}
 }
 
+func TestExtractFrontmatterTags(t *testing.T) {
+	tests := []struct {
+		name    string
+		content string
+		want    string
+	}{
+		{
+			name:    "tags present",
+			content: "---\ntitle: Hello\ntags: programming/go, tools\n---\nBody text.\n",
+			want:    "programming/go, tools",
+		},
+		{
+			name:    "no tags",
+			content: "---\ntitle: Hello\n---\nBody text.\n",
+			want:    "",
+		},
+		{
+			name:    "no frontmatter",
+			content: "Just body text.\n",
+			want:    "",
+		},
+		{
+			name:    "empty content",
+			content: "",
+			want:    "",
+		},
+		{
+			name:    "single tag",
+			content: "---\ntags: mytag\n---\n",
+			want:    "mytag",
+		},
+		{
+			name:    "tags with extra spaces",
+			content: "---\ntags:  foo , bar \n---\n",
+			want:    "foo , bar",
+		},
+		{
+			name:    "tags not in frontmatter",
+			content: "---\ntitle: Hello\n---\ntags: not-frontmatter\n",
+			want:    "",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := extractFrontmatterTags(tt.content)
+			if got != tt.want {
+				t.Errorf("extractFrontmatterTags() = %q, want %q", got, tt.want)
+			}
+		})
+	}
+}
+
+func TestIsInsideWikiLink(t *testing.T) {
+	tests := []struct {
+		name    string
+		content string
+		line    int
+		col     int
+		want    bool
+	}{
+		{
+			name:    "cursor right after [[",
+			content: "text [[",
+			line:    0,
+			col:     7,
+			want:    true,
+		},
+		{
+			name:    "cursor typing inside [[",
+			content: "text [[20220",
+			line:    0,
+			col:     12,
+			want:    true,
+		},
+		{
+			name:    "cursor inside closed link",
+			content: "text [[20220601-1]]",
+			line:    0,
+			col:     10,
+			want:    true,
+		},
+		{
+			name:    "cursor after closed link",
+			content: "text [[20220601-1]] more",
+			line:    0,
+			col:     22,
+			want:    false,
+		},
+		{
+			name:    "single bracket only",
+			content: "text [",
+			line:    0,
+			col:     6,
+			want:    false,
+		},
+		{
+			name:    "no brackets",
+			content: "plain text",
+			line:    0,
+			col:     5,
+			want:    false,
+		},
+		{
+			name:    "second unclosed link on same line",
+			content: "text [[20220601-1]] more [[",
+			line:    0,
+			col:     27,
+			want:    true,
+		},
+		{
+			name:    "multiline, cursor on second line",
+			content: "first line\ntext [[note",
+			line:    1,
+			col:     11,
+			want:    true,
+		},
+		{
+			name:    "cursor at col 0",
+			content: "text [[note",
+			line:    0,
+			col:     0,
+			want:    false,
+		},
+		{
+			name:    "empty content",
+			content: "",
+			line:    0,
+			col:     0,
+			want:    false,
+		},
+		{
+			name:    "line out of range",
+			content: "one line",
+			line:    5,
+			col:     0,
+			want:    false,
+		},
+		{
+			name:    "col beyond line length",
+			content: "text [[",
+			line:    0,
+			col:     100,
+			want:    true,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := isInsideWikiLink(tt.content, tt.line, tt.col)
+			if got != tt.want {
+				t.Errorf("isInsideWikiLink(%q, %d, %d) = %v, want %v",
+					tt.content, tt.line, tt.col, got, tt.want)
+			}
+		})
+	}
+}
+
+func TestGetDocumentContent(t *testing.T) {
+	dir := t.TempDir()
+	idDir := filepath.Join(dir, "notes", "by", "id")
+	if err := os.MkdirAll(idDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+
+	writeTestFile(t, idDir, "20220601-1-test.md", "disk content")
+	filePath := filepath.Join(idDir, "20220601-1-test.md")
+	uri := pathToURI(filePath)
+
+	srv := &lspServer{
+		rootDir: dir,
+		docs:    make(map[string]string),
+	}
+
+	// Without didOpen, should read from disk.
+	content, err := srv.getDocumentContent(uri)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if content != "disk content" {
+		t.Errorf("got %q, want %q", content, "disk content")
+	}
+
+	// After didOpen, should return buffer content.
+	srv.docs[uri] = "buffer content"
+	content, err = srv.getDocumentContent(uri)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if content != "buffer content" {
+		t.Errorf("got %q, want %q", content, "buffer content")
+	}
+
+	// After didClose, should fall back to disk.
+	delete(srv.docs, uri)
+	content, err = srv.getDocumentContent(uri)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if content != "disk content" {
+		t.Errorf("got %q, want %q", content, "disk content")
+	}
+}
+
+func TestServeLSP_Completion(t *testing.T) {
+	baseDir := t.TempDir()
+	idDir := filepath.Join(baseDir, "notes", "by", "id")
+	filesDir := filepath.Join(baseDir, "files", "20220601-3-docs")
+	for _, d := range []string{idDir, filesDir} {
+		if err := os.MkdirAll(d, 0o755); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	writeTestFile(t, idDir, "20220601-1-alpha.md",
+		"---\ntitle: Alpha\ntags: programming/go, tools\n---\nAlpha content.\n")
+	writeTestFile(t, idDir, "20220601-2-beta.md",
+		"---\ntitle: Beta\n---\nBeta content.\n")
+	writeTestFile(t, filesDir, "contract.pdf", "pdf bytes")
+
+	editorFile := filepath.Join(idDir, "20220602-1-editor.md")
+	writeTestFile(t, idDir, "20220602-1-editor.md",
+		"---\ntitle: Editor\n---\nSee [[")
+
+	var input bytes.Buffer
+
+	// 1. initialize
+	writeRPCMessage(t, &input, 1, "initialize", map[string]any{
+		"rootUri": pathToURI(baseDir),
+	})
+
+	// 2. initialized
+	writeRPCNotification(t, &input, "initialized", map[string]any{})
+
+	// 3. didOpen with content containing [[
+	writeRPCNotification(t, &input, "textDocument/didOpen", map[string]any{
+		"textDocument": map[string]any{
+			"uri":        pathToURI(editorFile),
+			"languageId": "markdown",
+			"version":    1,
+			"text":       "---\ntitle: Editor\n---\nSee [[",
+		},
+	})
+
+	// 4. completion after [[
+	writeRPCMessage(t, &input, 2, "textDocument/completion", map[string]any{
+		"textDocument": map[string]string{
+			"uri": pathToURI(editorFile),
+		},
+		"position": map[string]int{
+			"line":      3,
+			"character": 7, // after "See [["
+		},
+		"context": map[string]any{
+			"triggerKind":      2,
+			"triggerCharacter": "[",
+		},
+	})
+
+	// 5. completion NOT inside [[ (cursor on line 1)
+	writeRPCMessage(t, &input, 3, "textDocument/completion", map[string]any{
+		"textDocument": map[string]string{
+			"uri": pathToURI(editorFile),
+		},
+		"position": map[string]int{
+			"line":      1,
+			"character": 5,
+		},
+	})
+
+	// 6. shutdown
+	writeRPCMessage(t, &input, 4, "shutdown", nil)
+
+	var output bytes.Buffer
+	if err := ServeLSP(&input, &output, LSPOptions{}); err != nil {
+		t.Fatal(err)
+	}
+
+	responses := parseRPCResponses(t, output.Bytes())
+	if len(responses) != 4 {
+		t.Fatalf("got %d responses, want 4", len(responses))
+	}
+
+	// Response 0 (id=1): initialize - check capabilities.
+	var initResult lspInitializeResult
+	if err := json.Unmarshal(responses[0].Result, &initResult); err != nil {
+		t.Fatal(err)
+	}
+	if initResult.Capabilities.CompletionProvider == nil {
+		t.Fatal("CompletionProvider should not be nil")
+	}
+	if initResult.Capabilities.TextDocumentSync == nil {
+		t.Fatal("TextDocumentSync should not be nil")
+	}
+
+	// Response 1 (id=2): completion inside [[ - should have items.
+	var completionResult lspCompletionList
+	if err := json.Unmarshal(responses[1].Result, &completionResult); err != nil {
+		t.Fatal(err)
+	}
+	// Should have 3 notes (alpha, beta, editor) + 1 file.
+	if len(completionResult.Items) != 4 {
+		t.Errorf("completion items: got %d, want 4", len(completionResult.Items))
+		for _, item := range completionResult.Items {
+			t.Logf("  item: %q", item.Label)
+		}
+	}
+
+	// Verify we have both note stems and the file path.
+	items := make(map[string]lspCompletionItem)
+	for _, item := range completionResult.Items {
+		items[item.Label] = item
+		if item.Kind != 17 {
+			t.Errorf("item %q kind = %d, want 17", item.Label, item.Kind)
+		}
+	}
+	for _, want := range []string{"20220601-1-alpha", "20220601-2-beta", "20220601-3-docs/contract.pdf"} {
+		if _, ok := items[want]; !ok {
+			t.Errorf("missing expected completion item %q", want)
+		}
+	}
+
+	// Verify Detail and LabelDetails (tags) on note items.
+	if got := items["20220601-1-alpha"].Detail; got != "programming/go, tools" {
+		t.Errorf("alpha detail = %q, want %q", got, "programming/go, tools")
+	}
+	if items["20220601-1-alpha"].LabelDetails == nil {
+		t.Error("alpha labelDetails should not be nil")
+	} else if got := items["20220601-1-alpha"].LabelDetails.Description; got != "programming/go, tools" {
+		t.Errorf("alpha labelDetails.description = %q, want %q", got, "programming/go, tools")
+	}
+	if got := items["20220601-2-beta"].Detail; got != "" {
+		t.Errorf("beta detail = %q, want empty", got)
+	}
+	if items["20220601-2-beta"].LabelDetails != nil {
+		t.Errorf("beta labelDetails should be nil, got %+v", items["20220601-2-beta"].LabelDetails)
+	}
+	if got := items["20220601-3-docs/contract.pdf"].Detail; got != "" {
+		t.Errorf("file detail = %q, want empty", got)
+	}
+
+	// Response 2 (id=3): completion NOT inside [[ - should be null.
+	if string(responses[2].Result) != "null" {
+		t.Errorf("expected null for completion outside [[, got %s", responses[2].Result)
+	}
+}
+
+func TestServeLSP_CompletionIndexUpdate(t *testing.T) {
+	baseDir := t.TempDir()
+	idDir := filepath.Join(baseDir, "notes", "by", "id")
+	if err := os.MkdirAll(idDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+
+	writeTestFile(t, idDir, "20220601-1-alpha.md",
+		"---\ntitle: Alpha\n---\nAlpha content.\n")
+
+	// Use a separate tmp file outside notes/by/id/ for the editor buffer,
+	// so we can precisely control the index count.
+	editorContent := "---\ntitle: Editor\n---\nSee [["
+	editorURI := "file:///tmp/editor-buffer.md"
+
+	var input bytes.Buffer
+
+	// 1. initialize - at this point only alpha.md is in notes/by/id/.
+	writeRPCMessage(t, &input, 1, "initialize", map[string]any{
+		"rootUri": pathToURI(baseDir),
+	})
+	writeRPCNotification(t, &input, "initialized", map[string]any{})
+
+	// 2. didOpen with buffer content containing [[
+	writeRPCNotification(t, &input, "textDocument/didOpen", map[string]any{
+		"textDocument": map[string]any{
+			"uri":        editorURI,
+			"languageId": "markdown",
+			"version":    1,
+			"text":       editorContent,
+		},
+	})
+
+	// 3. completion - should have 1 note (alpha).
+	writeRPCMessage(t, &input, 2, "textDocument/completion", map[string]any{
+		"textDocument": map[string]string{
+			"uri": editorURI,
+		},
+		"position": map[string]int{
+			"line":      3,
+			"character": 7,
+		},
+	})
+
+	// 4. Notify via didChangeWatchedFiles that a new note was created.
+	// The file doesn't need to exist on disk — indexAddFile only parses the URI.
+	newNoteURI := pathToURI(filepath.Join(idDir, "20220601-2-beta.md"))
+
+	writeRPCNotification(t, &input, "workspace/didChangeWatchedFiles", map[string]any{
+		"changes": []map[string]any{
+			{"uri": newNoteURI, "type": 1}, // Created
+		},
+	})
+
+	// 5. completion again - should now have 2 notes (alpha + beta).
+	writeRPCMessage(t, &input, 3, "textDocument/completion", map[string]any{
+		"textDocument": map[string]string{
+			"uri": editorURI,
+		},
+		"position": map[string]int{
+			"line":      3,
+			"character": 7,
+		},
+	})
+
+	// 6. Delete alpha via didChangeWatchedFiles.
+	writeRPCNotification(t, &input, "workspace/didChangeWatchedFiles", map[string]any{
+		"changes": []map[string]any{
+			{"uri": pathToURI(filepath.Join(idDir, "20220601-1-alpha.md")), "type": 3}, // Deleted
+		},
+	})
+
+	// 7. completion again - should now have 1 note (beta).
+	writeRPCMessage(t, &input, 4, "textDocument/completion", map[string]any{
+		"textDocument": map[string]string{
+			"uri": editorURI,
+		},
+		"position": map[string]int{
+			"line":      3,
+			"character": 7,
+		},
+	})
+
+	// 8. shutdown
+	writeRPCMessage(t, &input, 5, "shutdown", nil)
+
+	var output bytes.Buffer
+	if err := ServeLSP(&input, &output, LSPOptions{}); err != nil {
+		t.Fatal(err)
+	}
+
+	responses := parseRPCResponses(t, output.Bytes())
+	if len(responses) != 5 {
+		t.Fatalf("got %d responses, want 5", len(responses))
+	}
+
+	// Response 1 (id=2): initial completion - 1 note (alpha).
+	var comp1 lspCompletionList
+	if err := json.Unmarshal(responses[1].Result, &comp1); err != nil {
+		t.Fatal(err)
+	}
+	if len(comp1.Items) != 1 {
+		t.Errorf("initial completion: got %d items, want 1", len(comp1.Items))
+	}
+
+	// Response 2 (id=3): after create - 2 notes (alpha + beta).
+	var comp2 lspCompletionList
+	if err := json.Unmarshal(responses[2].Result, &comp2); err != nil {
+		t.Fatal(err)
+	}
+	if len(comp2.Items) != 2 {
+		t.Errorf("after create: got %d items, want 2", len(comp2.Items))
+	}
+
+	// Verify the new note is in the list.
+	found := false
+	for _, item := range comp2.Items {
+		if item.Label == "20220601-2-beta" {
+			found = true
+			break
+		}
+	}
+	if !found {
+		t.Error("new note 20220601-2-beta not found in completion after create")
+	}
+
+	// Response 3 (id=4): after delete - 1 note (beta).
+	var comp3 lspCompletionList
+	if err := json.Unmarshal(responses[3].Result, &comp3); err != nil {
+		t.Fatal(err)
+	}
+	if len(comp3.Items) != 1 {
+		t.Errorf("after delete: got %d items, want 1", len(comp3.Items))
+	}
+
+	// Verify alpha is gone.
+	for _, item := range comp3.Items {
+		if item.Label == "20220601-1-alpha" {
+			t.Error("deleted note 20220601-1-alpha should not be in completion after delete")
+		}
+	}
+}
+
 // ---------- test helpers ----------
 
 func writeTestFile(t *testing.T, dir, name, content string) {

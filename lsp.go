@@ -85,12 +85,92 @@ type lspInitializeParams struct {
 }
 
 type lspServerCapabilities struct {
-	DefinitionProvider bool `json:"definitionProvider"`
-	ReferencesProvider bool `json:"referencesProvider"`
+	TextDocumentSync   *lspTextDocumentSyncOptions `json:"textDocumentSync,omitempty"`
+	CompletionProvider *lspCompletionOptions       `json:"completionProvider,omitempty"`
+	DefinitionProvider bool                        `json:"definitionProvider"`
+	ReferencesProvider bool                        `json:"referencesProvider"`
 }
 
 type lspInitializeResult struct {
 	Capabilities lspServerCapabilities `json:"capabilities"`
+}
+
+// ---------- Document sync types ----------
+
+type lspTextDocumentSyncOptions struct {
+	OpenClose bool `json:"openClose"`
+	Change    int  `json:"change"` // 1 = Full
+}
+
+type lspTextDocumentItem struct {
+	URI  string `json:"uri"`
+	Text string `json:"text"`
+}
+
+type lspDidOpenTextDocumentParams struct {
+	TextDocument lspTextDocumentItem `json:"textDocument"`
+}
+
+type lspDidChangeTextDocumentParams struct {
+	TextDocument   lspVersionedTextDocumentIdentifier  `json:"textDocument"`
+	ContentChanges []lspTextDocumentContentChangeEvent `json:"contentChanges"`
+}
+
+type lspVersionedTextDocumentIdentifier struct {
+	URI string `json:"uri"`
+}
+
+type lspTextDocumentContentChangeEvent struct {
+	Text string `json:"text"`
+}
+
+type lspDidCloseTextDocumentParams struct {
+	TextDocument lspTextDocumentIdentifier `json:"textDocument"`
+}
+
+// ---------- Completion types ----------
+
+type lspCompletionOptions struct {
+	TriggerCharacters []string `json:"triggerCharacters,omitempty"`
+}
+
+type lspCompletionParams struct {
+	lspTextDocumentPositionParams
+	Context *lspCompletionContext `json:"context,omitempty"`
+}
+
+type lspCompletionContext struct {
+	TriggerKind      int    `json:"triggerKind"`
+	TriggerCharacter string `json:"triggerCharacter,omitempty"`
+}
+
+type lspCompletionItemLabelDetails struct {
+	Description string `json:"description,omitempty"`
+}
+
+type lspCompletionItem struct {
+	Label        string                         `json:"label"`
+	Kind         int                            `json:"kind,omitempty"`
+	Detail       string                         `json:"detail,omitempty"`
+	LabelDetails *lspCompletionItemLabelDetails `json:"labelDetails,omitempty"`
+	InsertText   string                         `json:"insertText,omitempty"`
+	FilterText   string                         `json:"filterText,omitempty"`
+}
+
+type lspCompletionList struct {
+	IsIncomplete bool                `json:"isIncomplete"`
+	Items        []lspCompletionItem `json:"items"`
+}
+
+// ---------- File watching types ----------
+
+type lspDidChangeWatchedFilesParams struct {
+	Changes []lspFileEvent `json:"changes"`
+}
+
+type lspFileEvent struct {
+	URI  string `json:"uri"`
+	Type int    `json:"type"` // 1=Created, 2=Changed, 3=Deleted
 }
 
 // ---------- LSP server ----------
@@ -103,22 +183,42 @@ type LSPOptions struct {
 	FlatTags bool
 }
 
+// noteEntry holds a note's filename stem and tags for completion.
+type noteEntry struct {
+	stem string
+	tags string
+}
+
 type lspServer struct {
 	rootDir  string
 	flatTags bool
+	docs     map[string]string // URI -> content for open documents
+	notes    []noteEntry       // cached notes from notes/by/id/
+	files    []string          // cached file paths from files/
 }
 
 func (s *lspServer) handle(req jsonrpcRequest) (any, error) {
 	switch req.Method {
 	case "initialize":
 		return s.handleInitialize(req.Params)
-	case "initialized", "textDocument/didOpen", "textDocument/didClose",
-		"textDocument/didChange", "textDocument/didSave":
+	case "initialized":
 		return nil, nil
+	case "textDocument/didOpen":
+		return s.handleDidOpen(req.Params)
+	case "textDocument/didChange":
+		return s.handleDidChange(req.Params)
+	case "textDocument/didClose":
+		return s.handleDidClose(req.Params)
+	case "textDocument/didSave":
+		return nil, nil
+	case "textDocument/completion":
+		return s.handleCompletion(req.Params)
 	case "textDocument/definition":
 		return s.handleDefinition(req.Params)
 	case "textDocument/references":
 		return s.handleReferences(req.Params)
+	case "workspace/didChangeWatchedFiles":
+		return s.handleDidChangeWatchedFiles(req.Params)
 	case "shutdown":
 		return nil, nil
 	case "exit":
@@ -152,11 +252,22 @@ func (s *lspServer) handleInitialize(raw json.RawMessage) (any, error) {
 	}
 	s.rootDir = root
 
-	lspLog.Printf("initialize: rootDir=%q (rootUri=%q rootPath=%q workspaceFolders=%d)",
-		s.rootDir, params.RootURI, params.RootPath, len(params.WorkspaceFolders))
+	s.docs = make(map[string]string)
+	s.refreshIndex()
+
+	lspLog.Printf("initialize: rootDir=%q (rootUri=%q rootPath=%q workspaceFolders=%d) notes=%d files=%d",
+		s.rootDir, params.RootURI, params.RootPath, len(params.WorkspaceFolders),
+		len(s.notes), len(s.files))
 
 	return lspInitializeResult{
 		Capabilities: lspServerCapabilities{
+			TextDocumentSync: &lspTextDocumentSyncOptions{
+				OpenClose: true,
+				Change:    1, // Full
+			},
+			CompletionProvider: &lspCompletionOptions{
+				TriggerCharacters: []string{"["},
+			},
 			DefinitionProvider: true,
 			ReferencesProvider: true,
 		},
@@ -169,15 +280,14 @@ func (s *lspServer) handleDefinition(raw json.RawMessage) (any, error) {
 		return nil, fmt.Errorf("unmarshal definition params: %w", err)
 	}
 
-	path := uriToPath(params.TextDocument.URI)
-	content, err := os.ReadFile(path)
+	content, err := s.getDocumentContent(params.TextDocument.URI)
 	if err != nil {
 		return nil, fmt.Errorf("read file: %w", err)
 	}
 
-	target := wikiLinkAtPosition(string(content), int(params.Position.Line), int(params.Position.Character))
-	lspLog.Printf("definition: path=%q line=%d col=%d target=%q",
-		path, params.Position.Line, params.Position.Character, target)
+	target := wikiLinkAtPosition(content, int(params.Position.Line), int(params.Position.Character))
+	lspLog.Printf("definition: uri=%q line=%d col=%d target=%q",
+		params.TextDocument.URI, params.Position.Line, params.Position.Character, target)
 	if target == "" {
 		return nil, nil
 	}
@@ -204,20 +314,20 @@ func (s *lspServer) handleReferences(raw json.RawMessage) (any, error) {
 		return nil, fmt.Errorf("unmarshal reference params: %w", err)
 	}
 
-	path := uriToPath(params.TextDocument.URI)
-	content, err := os.ReadFile(path)
+	content, err := s.getDocumentContent(params.TextDocument.URI)
 	if err != nil {
 		return nil, fmt.Errorf("read file: %w", err)
 	}
 
-	lines := strings.Split(string(content), "\n")
+	path := uriToPath(params.TextDocument.URI)
+	lines := strings.Split(content, "\n")
 	line := int(params.Position.Line)
 	col := int(params.Position.Character)
 
 	lspLog.Printf("references: path=%q line=%d col=%d", path, line, col)
 
 	// Mode 1: cursor on a wiki-link.
-	if target := wikiLinkAtPosition(string(content), line, col); target != "" {
+	if target := wikiLinkAtPosition(content, line, col); target != "" {
 		targetID := linkTargetToID(target)
 		idDir := filepath.Join(s.rootDir, "notes", "by", "id")
 		lspLog.Printf("references: mode=wiki-link target=%q targetID=%q idDir=%q", target, targetID, idDir)
@@ -227,7 +337,7 @@ func (s *lspServer) handleReferences(raw json.RawMessage) (any, error) {
 	}
 
 	// Mode 2 & 3: cursor in frontmatter.
-	inFM := line < len(lines) && isInFrontmatter(string(content), line)
+	inFM := line < len(lines) && isInFrontmatter(content, line)
 	lspLog.Printf("references: inFrontmatter=%v", inFM)
 	if inFM {
 		lineText := lines[line]
@@ -319,6 +429,205 @@ func (s *lspServer) findNotesByTagFlat(segment string) ([]lspLocation, error) {
 	return locs, nil
 }
 
+// ---------- Document store ----------
+
+func (s *lspServer) handleDidOpen(raw json.RawMessage) (any, error) {
+	var params lspDidOpenTextDocumentParams
+	if err := json.Unmarshal(raw, &params); err != nil {
+		return nil, fmt.Errorf("unmarshal didOpen params: %w", err)
+	}
+	s.docs[params.TextDocument.URI] = params.TextDocument.Text
+	return nil, nil
+}
+
+func (s *lspServer) handleDidChange(raw json.RawMessage) (any, error) {
+	var params lspDidChangeTextDocumentParams
+	if err := json.Unmarshal(raw, &params); err != nil {
+		return nil, fmt.Errorf("unmarshal didChange params: %w", err)
+	}
+	if len(params.ContentChanges) > 0 {
+		// Full sync: last change contains the entire document.
+		s.docs[params.TextDocument.URI] = params.ContentChanges[len(params.ContentChanges)-1].Text
+	}
+	return nil, nil
+}
+
+func (s *lspServer) handleDidClose(raw json.RawMessage) (any, error) {
+	var params lspDidCloseTextDocumentParams
+	if err := json.Unmarshal(raw, &params); err != nil {
+		return nil, fmt.Errorf("unmarshal didClose params: %w", err)
+	}
+	delete(s.docs, params.TextDocument.URI)
+	return nil, nil
+}
+
+// getDocumentContent returns the content of a document. If the document is
+// open in the editor (tracked via didOpen/didChange), the in-memory version
+// is returned. Otherwise the file is read from disk.
+func (s *lspServer) getDocumentContent(uri string) (string, error) {
+	if content, ok := s.docs[uri]; ok {
+		return content, nil
+	}
+	data, err := os.ReadFile(uriToPath(uri))
+	if err != nil {
+		return "", err
+	}
+	return string(data), nil
+}
+
+// ---------- Completion index ----------
+
+// refreshIndex scans notes/by/id/ for .md files (extracting stems and tags)
+// and walks files/ for all file paths. Called once during initialize.
+func (s *lspServer) refreshIndex() {
+	s.notes = nil
+	s.files = nil
+
+	idDir := filepath.Join(s.rootDir, "notes", "by", "id")
+	if entries, err := os.ReadDir(idDir); err == nil {
+		for _, e := range entries {
+			if e.IsDir() || !strings.HasSuffix(e.Name(), ".md") {
+				continue
+			}
+			stem := strings.TrimSuffix(e.Name(), ".md")
+			var tags string
+			if data, err := os.ReadFile(filepath.Join(idDir, e.Name())); err == nil {
+				tags = extractFrontmatterTags(string(data))
+			}
+			s.notes = append(s.notes, noteEntry{stem: stem, tags: tags})
+		}
+	}
+
+	filesDir := filepath.Join(s.rootDir, "files")
+	filepath.WalkDir(filesDir, func(path string, d os.DirEntry, err error) error {
+		if err != nil || d.IsDir() {
+			return nil
+		}
+		rel, err := filepath.Rel(filesDir, path)
+		if err != nil {
+			return nil
+		}
+		s.files = append(s.files, rel)
+		return nil
+	})
+}
+
+func (s *lspServer) indexAddFile(uri string) {
+	path := uriToPath(uri)
+	idDir := filepath.Join(s.rootDir, "notes", "by", "id")
+	filesDir := filepath.Join(s.rootDir, "files")
+
+	if strings.HasPrefix(path, idDir+string(filepath.Separator)) {
+		name := filepath.Base(path)
+		if strings.HasSuffix(name, ".md") {
+			stem := strings.TrimSuffix(name, ".md")
+			var tags string
+			if data, err := os.ReadFile(path); err == nil {
+				tags = extractFrontmatterTags(string(data))
+			}
+			s.notes = append(s.notes, noteEntry{stem: stem, tags: tags})
+		}
+	} else if strings.HasPrefix(path, filesDir+string(filepath.Separator)) {
+		rel, err := filepath.Rel(filesDir, path)
+		if err == nil {
+			s.files = append(s.files, rel)
+		}
+	}
+}
+
+func (s *lspServer) indexRemoveFile(uri string) {
+	path := uriToPath(uri)
+	idDir := filepath.Join(s.rootDir, "notes", "by", "id")
+	filesDir := filepath.Join(s.rootDir, "files")
+
+	if strings.HasPrefix(path, idDir+string(filepath.Separator)) {
+		name := filepath.Base(path)
+		if strings.HasSuffix(name, ".md") {
+			stem := strings.TrimSuffix(name, ".md")
+			for i, n := range s.notes {
+				if n.stem == stem {
+					s.notes = append(s.notes[:i], s.notes[i+1:]...)
+					break
+				}
+			}
+		}
+	} else if strings.HasPrefix(path, filesDir+string(filepath.Separator)) {
+		rel, err := filepath.Rel(filesDir, path)
+		if err == nil {
+			for i, f := range s.files {
+				if f == rel {
+					s.files = append(s.files[:i], s.files[i+1:]...)
+					break
+				}
+			}
+		}
+	}
+}
+
+// ---------- Completion ----------
+
+func (s *lspServer) handleCompletion(raw json.RawMessage) (any, error) {
+	var params lspCompletionParams
+	if err := json.Unmarshal(raw, &params); err != nil {
+		return nil, fmt.Errorf("unmarshal completion params: %w", err)
+	}
+
+	content, err := s.getDocumentContent(params.TextDocument.URI)
+	if err != nil {
+		return nil, nil // gracefully return no completions
+	}
+
+	if !isInsideWikiLink(content, int(params.Position.Line), int(params.Position.Character)) {
+		return nil, nil
+	}
+
+	items := make([]lspCompletionItem, 0, len(s.notes)+len(s.files))
+	for _, n := range s.notes {
+		item := lspCompletionItem{
+			Label:      n.stem,
+			Kind:       17, // File
+			Detail:     n.tags,
+			InsertText: n.stem,
+			FilterText: n.stem,
+		}
+		if n.tags != "" {
+			item.LabelDetails = &lspCompletionItemLabelDetails{Description: n.tags}
+		}
+		items = append(items, item)
+	}
+	for _, name := range s.files {
+		items = append(items, lspCompletionItem{
+			Label:      name,
+			Kind:       17, // File
+			InsertText: name,
+			FilterText: name,
+		})
+	}
+
+	return lspCompletionList{
+		IsIncomplete: false,
+		Items:        items,
+	}, nil
+}
+
+// ---------- File watching ----------
+
+func (s *lspServer) handleDidChangeWatchedFiles(raw json.RawMessage) (any, error) {
+	var params lspDidChangeWatchedFilesParams
+	if err := json.Unmarshal(raw, &params); err != nil {
+		return nil, fmt.Errorf("unmarshal didChangeWatchedFiles params: %w", err)
+	}
+	for _, change := range params.Changes {
+		switch change.Type {
+		case 1: // Created
+			s.indexAddFile(change.URI)
+		case 3: // Deleted
+			s.indexRemoveFile(change.URI)
+		}
+	}
+	return nil, nil
+}
+
 // ---------- Helpers ----------
 
 // wikiLinkAtPosition returns the target inside a [[...]] wiki-link if the
@@ -337,6 +646,56 @@ func wikiLinkAtPosition(content string, line, col int) string {
 		linkEnd := m[1]   // position after last ]
 		if col >= linkStart && col < linkEnd {
 			return lineText[m[2]:m[3]]
+		}
+	}
+	return ""
+}
+
+// isInsideWikiLink reports whether the cursor at (line, col) is inside an
+// unclosed [[ wiki-link. It scans backwards from the cursor on the same line
+// looking for [[ without a closing ]] between it and the cursor.
+func isInsideWikiLink(content string, line, col int) bool {
+	lines := strings.Split(content, "\n")
+	if line < 0 || line >= len(lines) {
+		return false
+	}
+	lineText := lines[line]
+	if col > len(lineText) {
+		col = len(lineText)
+	}
+	prefix := lineText[:col]
+
+	// Find the last [[ in the prefix.
+	openIdx := strings.LastIndex(prefix, "[[")
+	if openIdx < 0 {
+		return false
+	}
+	// Check there is no ]] between the [[ and the cursor.
+	between := prefix[openIdx+2:]
+	return !strings.Contains(between, "]]")
+}
+
+// extractFrontmatterTags does a lightweight scan of a note's content to
+// extract the tags value from the YAML frontmatter without full parsing.
+// Returns the raw value string (e.g. "programming/go, tools") or "".
+func extractFrontmatterTags(content string) string {
+	lines := strings.Split(content, "\n")
+	inFM := false
+	for _, l := range lines {
+		trimmed := strings.TrimSpace(l)
+		if trimmed == frontmatterSep {
+			if inFM {
+				return "" // closing --- reached without finding tags
+			}
+			inFM = true
+			continue
+		}
+		if !inFM {
+			continue
+		}
+		if key := frontmatterKeyAtLine(l); key == "tags" {
+			idx := strings.Index(l, ":")
+			return strings.TrimSpace(l[idx+1:])
 		}
 	}
 	return ""
