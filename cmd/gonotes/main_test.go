@@ -1,9 +1,93 @@
 package main
 
 import (
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 )
+
+func withTempCWD(t *testing.T) string {
+	t.Helper()
+	tmp := t.TempDir()
+	old, err := os.Getwd()
+	if err != nil {
+		t.Fatalf("Getwd() err = %v", err)
+	}
+	if err := os.Chdir(tmp); err != nil {
+		t.Fatalf("Chdir(tmp) err = %v", err)
+	}
+	t.Cleanup(func() {
+		if err := os.Chdir(old); err != nil {
+			t.Fatalf("Chdir(old) err = %v", err)
+		}
+	})
+	return tmp
+}
+
+func TestRunNewValidations(t *testing.T) {
+	tests := []struct {
+		name string
+		args []string
+		want string
+	}{
+		{
+			name: "stdin and file conflict",
+			args: []string{"-", "-f", "draft.md"},
+			want: "cannot use both stdin (-) and -f",
+		},
+		{
+			name: "tag rewrite pair mismatch",
+			args: []string{"-tm", "^foo$"},
+			want: "-tm and -tr must be provided in equal counts",
+		},
+		{
+			name: "tags and rewrites conflict",
+			args: []string{"-T", "foo", "-tm", "^foo$", "-tr", "bar"},
+			want: "cannot combine -T with -tm/-tr",
+		},
+		{
+			name: "unknown output format",
+			args: []string{"-n", "-o", "yaml"},
+			want: "unknown output format",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			err := runNew(tt.args)
+			if err == nil {
+				t.Fatalf("runNew(%v) err = <nil>, want error", tt.args)
+			}
+			if !strings.Contains(err.Error(), tt.want) {
+				t.Fatalf("runNew(%v) err = %q, want substring %q", tt.args, err.Error(), tt.want)
+			}
+		})
+	}
+}
+
+func TestRunUpdateRejectsNonCanonicalIDArg(t *testing.T) {
+	err := runUpdate([]string{"-i", "2026-03-28-1", "-d", "2026-04-01 10:00:00"})
+	if err == nil {
+		t.Fatal("runUpdate() err = <nil>, want error")
+	}
+	if !strings.Contains(err.Error(), "-i must start with yyyymmdd-N") {
+		t.Fatalf("runUpdate() err = %q, want ID format error", err.Error())
+	}
+}
+
+func TestRunUpdateAllDryRunInEmptyWorkspace(t *testing.T) {
+	tmp := withTempCWD(t)
+	idDir := filepath.Join(tmp, "notes", "by", "id")
+	if err := os.MkdirAll(idDir, 0o755); err != nil {
+		t.Fatalf("MkdirAll() err = %v", err)
+	}
+
+	err := runUpdate([]string{"-a", "-n", "-d", "2026-04-01 10:00:00"})
+	if err != nil {
+		t.Fatalf("runUpdate() err = %v", err)
+	}
+}
 
 func TestRunUpdateSelectorValidation(t *testing.T) {
 	tests := []struct {
