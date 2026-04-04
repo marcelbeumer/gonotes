@@ -468,7 +468,7 @@ Test body with [[20260101-1]] link.`)
 
 	opts := PrepareOptions{Now: now}
 
-	note, plan, err := CreateNote(baseDir, input, opts, "", false)
+	note, plan, err := CreateNote(baseDir, input, opts, false)
 	if err != nil {
 		t.Fatalf("CreateNote() err = %q", err)
 	}
@@ -502,25 +502,27 @@ Test body with [[20260101-1]] link.`)
 	}
 }
 
-func TestCreateNoteWithExplicitID(t *testing.T) {
+func TestCreateNoteUsesNextID(t *testing.T) {
 	baseDir := t.TempDir()
 	now := func() time.Time { return testTime }
+	idDir := filepath.Join(baseDir, "notes", "by", "id")
+	writeTestNote(t, idDir, "20260328-3-existing.md", "---\ntitle: Existing\n---\n")
 
 	opts := PrepareOptions{
-		Title: StringPtr("Explicit ID"),
+		Title: StringPtr("Generated ID"),
 		Now:   now,
 	}
 
-	note, _, err := CreateNote(baseDir, nil, opts, "20260101-42", false)
+	note, _, err := CreateNote(baseDir, nil, opts, false)
 	if err != nil {
 		t.Fatalf("CreateNote() err = %q", err)
 	}
 
-	if note.ID != "20260101-42" {
-		t.Errorf("ID = %q, want %q", note.ID, "20260101-42")
+	if note.ID != "20260328-4" {
+		t.Errorf("ID = %q, want %q", note.ID, "20260328-4")
 	}
 
-	path := filepath.Join(baseDir, "notes", "by", "id", "20260101-42-explicit-id.md")
+	path := filepath.Join(baseDir, "notes", "by", "id", "20260328-4-generated-id.md")
 	if _, err := os.Stat(path); err != nil {
 		t.Errorf("note file not found at expected path: %v", err)
 	}
@@ -536,7 +538,7 @@ func TestCreateNoteDryRun(t *testing.T) {
 		Now:   now,
 	}
 
-	note, plan, err := CreateNote(baseDir, nil, opts, "", true)
+	note, plan, err := CreateNote(baseDir, nil, opts, true)
 	if err != nil {
 		t.Fatalf("CreateNote() err = %q", err)
 	}
@@ -574,7 +576,7 @@ func TestCreateNoteSequentialIDs(t *testing.T) {
 		Now:   now,
 	}
 
-	note1, _, err := CreateNote(baseDir, nil, opts, "", false)
+	note1, _, err := CreateNote(baseDir, nil, opts, false)
 	if err != nil {
 		t.Fatalf("first CreateNote() err = %q", err)
 	}
@@ -583,13 +585,90 @@ func TestCreateNoteSequentialIDs(t *testing.T) {
 	}
 
 	opts.Title = StringPtr("Second")
-	note2, _, err := CreateNote(baseDir, nil, opts, "", false)
+	note2, _, err := CreateNote(baseDir, nil, opts, false)
 	if err != nil {
 		t.Fatalf("second CreateNote() err = %q", err)
 	}
 	if note2.ID != "20260328-2" {
 		t.Errorf("second ID = %q, want %q", note2.ID, "20260328-2")
 	}
+}
+
+func TestCreateNoteAndRebuildSymlinksAreStable(t *testing.T) {
+	baseDir := t.TempDir()
+	now := func() time.Time { return testTime }
+
+	opts := PrepareOptions{
+		Title: StringPtr("Stable Symlinks"),
+		Tags:  StringPtr("foo/bar, baz"),
+		Date:  StringPtr("2026-03-28 14:30:00"),
+		Now:   now,
+	}
+
+	_, _, err := CreateNote(baseDir, nil, opts, false)
+	if err != nil {
+		t.Fatalf("CreateNote() err = %q", err)
+	}
+
+	before, err := snapshotNoteSymlinks(baseDir)
+	if err != nil {
+		t.Fatalf("snapshot before rebuild: %v", err)
+	}
+
+	if err := RebuildSymlinks(baseDir); err != nil {
+		t.Fatalf("RebuildSymlinks() err = %q", err)
+	}
+
+	after, err := snapshotNoteSymlinks(baseDir)
+	if err != nil {
+		t.Fatalf("snapshot after rebuild: %v", err)
+	}
+
+	if diff := cmp.Diff(before, after); diff != "" {
+		t.Errorf("symlink snapshot diff (-before, +after):\n%s", diff)
+	}
+}
+
+func snapshotNoteSymlinks(baseDir string) (map[string]string, error) {
+	paths := []string{
+		filepath.Join(baseDir, "notes", "by", "date"),
+		filepath.Join(baseDir, "notes", "by", "tags"),
+	}
+	out := map[string]string{}
+	for _, root := range paths {
+		if _, err := os.Stat(root); os.IsNotExist(err) {
+			continue
+		}
+		err := filepath.WalkDir(root, func(path string, d os.DirEntry, err error) error {
+			if err != nil {
+				return err
+			}
+			if d.IsDir() {
+				return nil
+			}
+			info, err := os.Lstat(path)
+			if err != nil {
+				return err
+			}
+			if info.Mode()&os.ModeSymlink == 0 {
+				return nil
+			}
+			rel, err := filepath.Rel(baseDir, path)
+			if err != nil {
+				return err
+			}
+			target, err := os.Readlink(path)
+			if err != nil {
+				return err
+			}
+			out[rel] = target
+			return nil
+		})
+		if err != nil {
+			return nil, err
+		}
+	}
+	return out, nil
 }
 
 func TestIDFromFilename(t *testing.T) {

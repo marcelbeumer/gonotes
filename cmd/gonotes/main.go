@@ -18,6 +18,7 @@ const usage = `Usage: gonotes <command> [flags]
 
 Commands:
   new        Create a new note
+  update     Update an existing note
   folder     Create a new folder for file storage
   rebuild    Scan notes, report issues, rename files, rebuild symlinks
 `
@@ -32,6 +33,8 @@ func main() {
 	switch os.Args[1] {
 	case "new":
 		err = runNew(os.Args[2:])
+	case "update":
+		err = runUpdate(os.Args[2:])
 	case "folder":
 		err = runFolder(os.Args[2:])
 	case "rebuild":
@@ -69,7 +72,10 @@ func runNew(args []string) error {
 	tags := fs.String("T", "", "set tags (comma-separated)")
 	date := fs.String("d", "", "set date (default: now)")
 	file := fs.String("f", "", "read note from file")
-	id := fs.String("i", "", "set id (default: generate)")
+	var tagMatches stringSliceFlag
+	var tagReplaces stringSliceFlag
+	fs.Var(&tagMatches, "tm", "tag regex match (repeatable; pair with -tr)")
+	fs.Var(&tagReplaces, "tr", "tag regex replace (repeatable; pair with -tm)")
 	output := fs.String("o", "md", "output format for dry run: md or json")
 	dryRun := fs.Bool("n", false, "dry run: print prepared note and plan, don't write")
 
@@ -96,6 +102,14 @@ Flags:
 	if readStdin && *file != "" {
 		return fmt.Errorf("cannot use both stdin (-) and -f")
 	}
+	if len(tagMatches) != len(tagReplaces) {
+		return fmt.Errorf("-tm and -tr must be provided in equal counts")
+	}
+
+	tagRewrites := make([]gonotes.TagRewrite, len(tagMatches))
+	for i := range tagMatches {
+		tagRewrites[i] = gonotes.TagRewrite{Match: tagMatches[i], Replace: tagReplaces[i]}
+	}
 
 	var r io.Reader
 	switch {
@@ -111,17 +125,22 @@ Flags:
 	}
 
 	// Build prepare options; only set pointers for explicitly provided flags.
-	opts := gonotes.PrepareOptions{}
+	opts := gonotes.PrepareOptions{TagRewrites: tagRewrites}
+	providedTags := false
 	fs.Visit(func(f *flag.Flag) {
 		switch f.Name {
 		case "t":
 			opts.Title = title
 		case "T":
 			opts.Tags = tags
+			providedTags = true
 		case "d":
 			opts.Date = date
 		}
 	})
+	if providedTags && len(tagMatches) > 0 {
+		return fmt.Errorf("cannot combine -T with -tm/-tr")
+	}
 
 	if *output != "md" && *output != "json" {
 		return fmt.Errorf("unknown output format: %q (use md or json)", *output)
@@ -133,7 +152,7 @@ Flags:
 		return fmt.Errorf("get working directory: %w", err)
 	}
 
-	note, plan, err := gonotes.CreateNote(baseDir, r, opts, *id, *dryRun)
+	note, plan, err := gonotes.CreateNote(baseDir, r, opts, *dryRun)
 	if err != nil {
 		return err
 	}
@@ -161,6 +180,234 @@ Flags:
 	// Normal mode: print the path of the created file.
 	fmt.Fprintln(os.Stdout, filepath.Join(baseDir, plan.WritePath))
 	return nil
+}
+
+func runUpdate(args []string) error {
+	readStdin := false
+	var flagArgs []string
+	for _, a := range args {
+		if a == "-" {
+			readStdin = true
+		} else {
+			flagArgs = append(flagArgs, a)
+		}
+	}
+
+	fs := flag.NewFlagSet("update", flag.ContinueOnError)
+	title := fs.String("t", "", "set title")
+	tags := fs.String("T", "", "set tags (comma-separated)")
+	date := fs.String("d", "", "set date")
+	id := fs.String("i", "", "target note by id (yyyymmdd-N, optional slug suffix)")
+	file := fs.String("f", "", "target note by file path")
+	all := fs.Bool("a", false, "target all notes under notes/by/id")
+	var tagMatches stringSliceFlag
+	var tagReplaces stringSliceFlag
+	fs.Var(&tagMatches, "tm", "tag regex match (repeatable; pair with -tr)")
+	fs.Var(&tagReplaces, "tr", "tag regex replace (repeatable; pair with -tm)")
+	output := fs.String("o", "md", "output format for dry run: md or json")
+	dryRun := fs.Bool("n", false, "dry run: print prepared note and plan, don't write")
+
+	fs.Usage = func() {
+		fmt.Fprintf(os.Stderr, `Usage: gonotes update [flags] [-]
+
+Update existing notes.
+
+Target selectors (exactly one):
+  -i id       target by note id (yyyymmdd-N, optional slug suffix)
+  -f file     target by file path
+  -           read from stdin (always dry run)
+  -a          target all notes under notes/by/id/
+
+Mutations (at least one):
+  -t title
+  -T tags
+  -d date
+  -tm/-tr     tag regex rewrite pairs (repeatable)
+
+Rules:
+  - cannot combine -T with -tm/-tr
+  - with -a, -t is not allowed
+
+Flags:
+`)
+		fs.PrintDefaults()
+	}
+
+	if err := fs.Parse(flagArgs); err != nil {
+		return err
+	}
+
+	selectorCount := 0
+	if *id != "" {
+		selectorCount++
+	}
+	if *file != "" {
+		selectorCount++
+	}
+	if readStdin {
+		selectorCount++
+	}
+	if *all {
+		selectorCount++
+	}
+	if selectorCount != 1 {
+		return fmt.Errorf("exactly one target selector is required: -i, -f, -, or -a")
+	}
+
+	provided := map[string]bool{}
+	fs.Visit(func(f *flag.Flag) {
+		provided[f.Name] = true
+	})
+
+	if len(tagMatches) != len(tagReplaces) {
+		return fmt.Errorf("-tm and -tr must be provided in equal counts")
+	}
+	if provided["T"] && len(tagMatches) > 0 {
+		return fmt.Errorf("cannot combine -T with -tm/-tr")
+	}
+	if *all && provided["t"] {
+		return fmt.Errorf("-t is not allowed with -a")
+	}
+
+	mutationCount := 0
+	if provided["t"] {
+		mutationCount++
+	}
+	if provided["T"] {
+		mutationCount++
+	}
+	if provided["d"] {
+		mutationCount++
+	}
+	if len(tagMatches) > 0 {
+		mutationCount++
+	}
+	if mutationCount == 0 {
+		return fmt.Errorf("at least one mutation is required: -t, -T, -d, or -tm/-tr")
+	}
+
+	if readStdin {
+		*dryRun = true
+	}
+	if *output != "md" && *output != "json" {
+		return fmt.Errorf("unknown output format: %q (use md or json)", *output)
+	}
+
+	tagRewrites := make([]gonotes.TagRewrite, len(tagMatches))
+	for i := range tagMatches {
+		tagRewrites[i] = gonotes.TagRewrite{Match: tagMatches[i], Replace: tagReplaces[i]}
+	}
+
+	opts := gonotes.PrepareOptions{TagRewrites: tagRewrites}
+	fs.Visit(func(f *flag.Flag) {
+		switch f.Name {
+		case "t":
+			opts.Title = title
+		case "T":
+			opts.Tags = tags
+		case "d":
+			opts.Date = date
+		}
+	})
+
+	baseDir, err := os.Getwd()
+	if err != nil {
+		return fmt.Errorf("get working directory: %w", err)
+	}
+
+	if readStdin {
+		note, err := gonotes.Prepare(os.Stdin, opts)
+		if err != nil {
+			return err
+		}
+		return printDryRunNote(note, *output)
+	}
+
+	if *all {
+		paths, err := gonotes.ListCanonicalNotePaths(baseDir)
+		if err != nil {
+			return err
+		}
+		changed := 0
+		for _, p := range paths {
+			res, err := gonotes.UpdateNoteFile(baseDir, p, opts, *dryRun)
+			if err != nil {
+				return err
+			}
+			if res.Changed {
+				changed++
+			}
+		}
+		if !*dryRun && changed > 0 {
+			if err := gonotes.RebuildSymlinks(baseDir); err != nil {
+				return err
+			}
+		}
+		fmt.Fprintf(os.Stderr, "notes: %d changed, %d unchanged\n", changed, len(paths)-changed)
+		return nil
+	}
+
+	targetPath := *file
+	if *id != "" {
+		path, err := gonotes.ResolveNotePathByID(baseDir, *id)
+		if err != nil {
+			return err
+		}
+		targetPath = path
+	} else {
+		targetPath = resolveUpdateFilePath(baseDir, targetPath)
+	}
+
+	res, err := gonotes.UpdateNoteFile(baseDir, targetPath, opts, *dryRun)
+	if err != nil {
+		return err
+	}
+
+	if *dryRun {
+		if err := printDryRunNote(res.Note, *output); err != nil {
+			return err
+		}
+		fmt.Fprint(os.Stderr, res.Plan.String())
+		return nil
+	}
+
+	if res.Changed {
+		if err := gonotes.RebuildSymlinks(baseDir); err != nil {
+			return err
+		}
+	}
+	fmt.Fprintln(os.Stdout, res.NewPath)
+	return nil
+}
+
+func printDryRunNote(note *gonotes.Note, output string) error {
+	switch output {
+	case "json":
+		b, err := note.JSON()
+		if err != nil {
+			return err
+		}
+		b = append(b, '\n')
+		if _, err := os.Stdout.Write(b); err != nil {
+			return err
+		}
+	default:
+		if _, err := fmt.Fprint(os.Stdout, note.Markdown()); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func resolveUpdateFilePath(baseDir, fileArg string) string {
+	if filepath.IsAbs(fileArg) {
+		return fileArg
+	}
+	idPath := filepath.Join(baseDir, "notes", "by", "id", fileArg)
+	if _, err := os.Stat(idPath); err == nil {
+		return idPath
+	}
+	return filepath.Join(baseDir, fileArg)
 }
 
 func runFolder(args []string) error {
@@ -266,4 +513,15 @@ func promptYN(question string) bool {
 	}
 	ans := strings.TrimSpace(strings.ToLower(stdinScanner.Text()))
 	return ans == "y" || ans == "yes"
+}
+
+type stringSliceFlag []string
+
+func (s *stringSliceFlag) String() string {
+	return strings.Join(*s, ",")
+}
+
+func (s *stringSliceFlag) Set(v string) error {
+	*s = append(*s, v)
+	return nil
 }

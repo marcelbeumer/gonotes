@@ -302,3 +302,41 @@ More content.`
 		t.Errorf("InternalLinks diff:\n%s", diff)
 	}
 }
+
+func TestPrepareTagRewrites(t *testing.T) {
+	note, err := Prepare(strings.NewReader(`---
+tags: programming/go, code/go, keep
+---
+`), PrepareOptions{
+		TagRewrites: []TagRewrite{
+			{Match: `^(programming|code)/go$`, Replace: `$1/golang`},
+		},
+		Now: fixedNow,
+	})
+	if err != nil {
+		t.Fatalf("Prepare() err = %q", err)
+	}
+
+	want := []string{"programming/golang", "code/golang", "keep"}
+	if diff := cmp.Diff(want, note.Tags); diff != "" {
+		t.Errorf("tags diff (-want, +got):\n%s", diff)
+	}
+
+	got, ok := note.Frontmatter.Get("tags")
+	if !ok {
+		t.Fatal("frontmatter tags missing")
+	}
+	if got != "programming/golang, code/golang, keep" {
+		t.Errorf("frontmatter tags = %q", got)
+	}
+}
+
+func TestPrepareTagRewritesInvalidRegex(t *testing.T) {
+	_, err := Prepare(strings.NewReader("---\ntags: foo\n---\n"), PrepareOptions{
+		TagRewrites: []TagRewrite{{Match: "(", Replace: "x"}},
+		Now:         fixedNow,
+	})
+	if err == nil {
+		t.Fatal("Prepare() err = <nil>, want error")
+	}
+}

@@ -3,6 +3,7 @@ package gonotes
 import (
 	"fmt"
 	"io"
+	"regexp"
 	"strings"
 	"time"
 )
@@ -13,10 +14,16 @@ const dateLayout = "2006-01-02 15:04:05"
 // A nil pointer means "not provided"; a non-nil pointer means "explicitly set"
 // (even if the pointed-to string is empty).
 type PrepareOptions struct {
-	Title *string
-	Tags  *string
-	Date  *string
-	Now   func() time.Time // for testing; defaults to time.Now if nil
+	Title       *string
+	Tags        *string
+	Date        *string
+	TagRewrites []TagRewrite
+	Now         func() time.Time // for testing; defaults to time.Now if nil
+}
+
+type TagRewrite struct {
+	Match   string
+	Replace string
 }
 
 // Prepare reads a note from r, merges frontmatter fields per opts, and returns
@@ -74,7 +81,63 @@ func Prepare(r io.Reader, opts PrepareOptions) (*Note, error) {
 		note.Tags = nil
 	}
 
+	if len(opts.TagRewrites) > 0 {
+		tags, err := rewriteTags(note.Tags, opts.TagRewrites)
+		if err != nil {
+			return nil, fmt.Errorf("prepare: %w", err)
+		}
+		note.Tags = tags
+		if len(tags) == 0 {
+			note.Frontmatter.Unset("tags")
+		} else {
+			note.Frontmatter.Set("tags", FormatTags(tags))
+		}
+	}
+
 	return note, nil
+}
+
+func rewriteTags(tags []string, rewrites []TagRewrite) ([]string, error) {
+	if len(tags) == 0 {
+		return nil, nil
+	}
+
+	type compiledRewrite struct {
+		re      *regexp.Regexp
+		replace string
+	}
+	compiled := make([]compiledRewrite, len(rewrites))
+	for i, rw := range rewrites {
+		re, err := regexp.Compile(rw.Match)
+		if err != nil {
+			return nil, fmt.Errorf("invalid tag match regex at index %d (%q): %w", i, rw.Match, err)
+		}
+		compiled[i] = compiledRewrite{re: re, replace: rw.Replace}
+	}
+
+	out := make([]string, 0, len(tags))
+	seen := make(map[string]struct{}, len(tags))
+	for _, tag := range tags {
+		updated := tag
+		for _, rw := range compiled {
+			updated = rw.re.ReplaceAllString(updated, rw.replace)
+		}
+		updated = strings.TrimSpace(updated)
+		if updated == "" {
+			continue
+		}
+		if _, ok := seen[updated]; ok {
+			continue
+		}
+		seen[updated] = struct{}{}
+		out = append(out, updated)
+	}
+
+	if len(out) == 0 {
+		return nil, nil
+	}
+
+	return out, nil
 }
 
 // StringPtr returns a pointer to s. Convenience for building PrepareOptions.
