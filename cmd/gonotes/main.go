@@ -74,8 +74,12 @@ func runNew(args []string) error {
 	file := fs.String("f", "", "read note from file")
 	var tagMatches stringSliceFlag
 	var tagReplaces stringSliceFlag
-	fs.Var(&tagMatches, "tm", "tag regex match (repeatable; pair with -tr)")
-	fs.Var(&tagReplaces, "tr", "tag regex replace (repeatable; pair with -tm)")
+	var extraKeys stringSliceFlag
+	var extraValues stringSliceFlag
+	fs.Var(&tagMatches, "Tm", "tag regex match (repeatable; pair with -Tr)")
+	fs.Var(&tagReplaces, "Tr", "tag regex replace (repeatable; pair with -Tm)")
+	fs.Var(&extraKeys, "Fk", "set custom frontmatter key (repeatable; pair with -Fv)")
+	fs.Var(&extraValues, "Fv", "set custom frontmatter value (repeatable; pair with -Fk)")
 	output := fs.String("o", "md", "output format for dry run: md or json")
 	dryRun := fs.Bool("n", false, "dry run: print prepared note and plan, don't write")
 
@@ -103,12 +107,19 @@ Flags:
 		return fmt.Errorf("cannot use both stdin (-) and -f")
 	}
 	if len(tagMatches) != len(tagReplaces) {
-		return fmt.Errorf("-tm and -tr must be provided in equal counts")
+		return fmt.Errorf("-Tm and -Tr must be provided in equal counts")
+	}
+	if len(extraKeys) != len(extraValues) {
+		return fmt.Errorf("-Fk and -Fv must be provided in equal counts")
 	}
 
 	tagRewrites := make([]gonotes.TagRewrite, len(tagMatches))
 	for i := range tagMatches {
 		tagRewrites[i] = gonotes.TagRewrite{Match: tagMatches[i], Replace: tagReplaces[i]}
+	}
+	extraFM := make([]gonotes.FrontmatterField, len(extraKeys))
+	for i := range extraKeys {
+		extraFM[i] = gonotes.FrontmatterField{Key: extraKeys[i], Value: extraValues[i]}
 	}
 
 	var r io.Reader
@@ -125,7 +136,10 @@ Flags:
 	}
 
 	// Build prepare options; only set pointers for explicitly provided flags.
-	opts := gonotes.PrepareOptions{TagRewrites: tagRewrites}
+	opts := gonotes.PrepareOptions{
+		TagRewrites:      tagRewrites,
+		ExtraFrontmatter: extraFM,
+	}
 	providedTags := false
 	fs.Visit(func(f *flag.Flag) {
 		switch f.Name {
@@ -139,7 +153,7 @@ Flags:
 		}
 	})
 	if providedTags && len(tagMatches) > 0 {
-		return fmt.Errorf("cannot combine -T with -tm/-tr")
+		return fmt.Errorf("cannot combine -T with -Tm/-Tr")
 	}
 
 	if *output != "md" && *output != "json" {
@@ -202,8 +216,16 @@ func runUpdate(args []string) error {
 	all := fs.Bool("a", false, "target all notes under notes/by/id")
 	var tagMatches stringSliceFlag
 	var tagReplaces stringSliceFlag
-	fs.Var(&tagMatches, "tm", "tag regex match (repeatable; pair with -tr)")
-	fs.Var(&tagReplaces, "tr", "tag regex replace (repeatable; pair with -tm)")
+	var extraKeys stringSliceFlag
+	var extraValues stringSliceFlag
+	var fmMatches stringSliceFlag
+	var fmReplaces stringSliceFlag
+	fs.Var(&tagMatches, "Tm", "tag regex match (repeatable; pair with -Tr)")
+	fs.Var(&tagReplaces, "Tr", "tag regex replace (repeatable; pair with -Tm)")
+	fs.Var(&extraKeys, "Fk", "set custom frontmatter key (repeatable; pair with -Fv)")
+	fs.Var(&extraValues, "Fv", "set custom frontmatter value (repeatable; pair with -Fk)")
+	fs.Var(&fmMatches, "Fm", "frontmatter key regex match (repeatable; pair with -Fr)")
+	fs.Var(&fmReplaces, "Fr", "frontmatter key regex replace (repeatable; pair with -Fm)")
 	output := fs.String("o", "md", "output format for dry run: md or json")
 	dryRun := fs.Bool("n", false, "dry run: print prepared note and plan, don't write")
 
@@ -222,10 +244,12 @@ Mutations (at least one):
   -t title
   -T tags
   -d date
-  -tm/-tr     tag regex rewrite pairs (repeatable)
+  -Tm/-Tr     tag regex rewrite pairs (repeatable)
+  -Fk/-Fv     custom frontmatter key/value pairs (repeatable)
+  -Fm/-Fr     frontmatter key regex rewrite pairs (repeatable)
 
 Rules:
-  - cannot combine -T with -tm/-tr
+  - cannot combine -T with -Tm/-Tr
   - with -a, -t is not allowed
 
 Flags:
@@ -260,10 +284,16 @@ Flags:
 	})
 
 	if len(tagMatches) != len(tagReplaces) {
-		return fmt.Errorf("-tm and -tr must be provided in equal counts")
+		return fmt.Errorf("-Tm and -Tr must be provided in equal counts")
+	}
+	if len(extraKeys) != len(extraValues) {
+		return fmt.Errorf("-Fk and -Fv must be provided in equal counts")
+	}
+	if len(fmMatches) != len(fmReplaces) {
+		return fmt.Errorf("-Fm and -Fr must be provided in equal counts")
 	}
 	if provided["T"] && len(tagMatches) > 0 {
-		return fmt.Errorf("cannot combine -T with -tm/-tr")
+		return fmt.Errorf("cannot combine -T with -Tm/-Tr")
 	}
 	if *all && provided["t"] {
 		return fmt.Errorf("-t is not allowed with -a")
@@ -282,8 +312,14 @@ Flags:
 	if len(tagMatches) > 0 {
 		mutationCount++
 	}
+	if len(extraKeys) > 0 {
+		mutationCount++
+	}
+	if len(fmMatches) > 0 {
+		mutationCount++
+	}
 	if mutationCount == 0 {
-		return fmt.Errorf("at least one mutation is required: -t, -T, -d, or -tm/-tr")
+		return fmt.Errorf("at least one mutation is required: -t, -T, -d, -Tm/-Tr, -Fk/-Fv, or -Fm/-Fr")
 	}
 
 	if readStdin {
@@ -297,8 +333,20 @@ Flags:
 	for i := range tagMatches {
 		tagRewrites[i] = gonotes.TagRewrite{Match: tagMatches[i], Replace: tagReplaces[i]}
 	}
+	extraFM := make([]gonotes.FrontmatterField, len(extraKeys))
+	for i := range extraKeys {
+		extraFM[i] = gonotes.FrontmatterField{Key: extraKeys[i], Value: extraValues[i]}
+	}
+	fmRewrites := make([]gonotes.FrontmatterRewrite, len(fmMatches))
+	for i := range fmMatches {
+		fmRewrites[i] = gonotes.FrontmatterRewrite{Match: fmMatches[i], Replace: fmReplaces[i]}
+	}
 
-	opts := gonotes.PrepareOptions{TagRewrites: tagRewrites}
+	opts := gonotes.PrepareOptions{
+		TagRewrites:         tagRewrites,
+		ExtraFrontmatter:    extraFM,
+		FrontmatterRewrites: fmRewrites,
+	}
 	fs.Visit(func(f *flag.Flag) {
 		switch f.Name {
 		case "t":

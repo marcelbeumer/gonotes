@@ -93,6 +93,16 @@ func (f *Frontmatter) Unset(key string) {
 	}
 }
 
+// Keys returns all keys in document order.
+func (f *Frontmatter) Keys() []string {
+	mn := f.mappingNode()
+	keys := make([]string, 0, len(mn.Content)/2)
+	for i := 0; i+1 < len(mn.Content); i += 2 {
+		keys = append(keys, mn.Content[i].Value)
+	}
+	return keys
+}
+
 // Map returns all scalar key-value pairs as a map. Non-scalar values are
 // represented by their string Value (which may be empty for sequences/mappings).
 func (f *Frontmatter) Map() map[string]string {

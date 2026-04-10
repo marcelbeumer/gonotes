@@ -340,3 +340,250 @@ func TestPrepareTagRewritesInvalidRegex(t *testing.T) {
 		t.Fatal("Prepare() err = <nil>, want error")
 	}
 }
+
+func TestPrepareExtraFrontmatter(t *testing.T) {
+	tests := []struct {
+		name   string
+		input  string
+		opts   PrepareOptions
+		wantFM map[string]string
+	}{
+		{
+			name:  "sets custom fields",
+			input: "---\ntitle: Test\ndate: 2026-01-01 00:00:00\n---\n",
+			opts: PrepareOptions{
+				ExtraFrontmatter: []FrontmatterField{
+					{Key: "href", Value: "https://example.com"},
+					{Key: "author", Value: "Alice"},
+				},
+				Now: fixedNow,
+			},
+			wantFM: map[string]string{
+				"title":  "Test",
+				"date":   "2026-01-01 00:00:00",
+				"href":   "https://example.com",
+				"author": "Alice",
+			},
+		},
+		{
+			name:  "on empty note",
+			input: "",
+			opts: PrepareOptions{
+				ExtraFrontmatter: []FrontmatterField{
+					{Key: "custom", Value: "value"},
+				},
+				Now: fixedNow,
+			},
+			wantFM: map[string]string{
+				"date":   "2026-03-28 14:30:00",
+				"custom": "value",
+			},
+		},
+		{
+			name: "overwrites existing value",
+			input: `---
+title: Old
+date: 2026-01-01 00:00:00
+author: Bob
+---
+`,
+			opts: PrepareOptions{
+				ExtraFrontmatter: []FrontmatterField{
+					{Key: "author", Value: "Alice"},
+				},
+				Now: fixedNow,
+			},
+			wantFM: map[string]string{
+				"title":  "Old",
+				"date":   "2026-01-01 00:00:00",
+				"author": "Alice",
+			},
+		},
+		{
+			name:  "combinable with tags",
+			input: "---\ndate: 2026-01-01 00:00:00\n---\n",
+			opts: PrepareOptions{
+				Tags: StringPtr("foo, bar"),
+				ExtraFrontmatter: []FrontmatterField{
+					{Key: "status", Value: "draft"},
+				},
+				Now: fixedNow,
+			},
+			wantFM: map[string]string{
+				"date":   "2026-01-01 00:00:00",
+				"tags":   "foo, bar",
+				"status": "draft",
+			},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			var r *strings.Reader
+			if tt.input != "" {
+				r = strings.NewReader(tt.input)
+			}
+
+			var note *Note
+			var err error
+			if r != nil {
+				note, err = Prepare(r, tt.opts)
+			} else {
+				note, err = Prepare(nil, tt.opts)
+			}
+			if err != nil {
+				t.Fatalf("Prepare() err = %q", err)
+			}
+
+			for k, want := range tt.wantFM {
+				got, ok := note.Frontmatter.Get(k)
+				if !ok {
+					t.Errorf("Frontmatter.Get(%q) not found, want %q", k, want)
+				} else if got != want {
+					t.Errorf("Frontmatter.Get(%q) = %q, want %q", k, got, want)
+				}
+			}
+		})
+	}
+}
+
+func TestPrepareFrontmatterRewrites(t *testing.T) {
+	tests := []struct {
+		name    string
+		input   string
+		opts    PrepareOptions
+		wantFM  map[string]string
+		gone    []string // keys that must not be present
+		wantErr bool
+	}{
+		{
+			name: "renames keys",
+			input: `---
+title: Test
+date: 2026-01-01 00:00:00
+author: Alice
+href: https://example.com
+---
+`,
+			opts: PrepareOptions{
+				FrontmatterRewrites: []FrontmatterRewrite{
+					{Match: `^author$`, Replace: "written-by"},
+					{Match: `^href$`, Replace: "url"},
+				},
+				Now: fixedNow,
+			},
+			wantFM: map[string]string{
+				"title":      "Test",
+				"date":       "2026-01-01 00:00:00",
+				"written-by": "Alice",
+				"url":        "https://example.com",
+			},
+			gone: []string{"author", "href"},
+		},
+		{
+			name: "later collision wins",
+			input: `---
+a: first
+b: keep
+a2: second
+date: 2026-01-01 00:00:00
+---
+`,
+			opts: PrepareOptions{
+				FrontmatterRewrites: []FrontmatterRewrite{
+					{Match: `^a2$`, Replace: "a"},
+				},
+				Now: fixedNow,
+			},
+			wantFM: map[string]string{
+				"a":    "second",
+				"b":    "keep",
+				"date": "2026-01-01 00:00:00",
+			},
+			gone: []string{"a2"},
+		},
+		{
+			name: "multiple keys match same pattern",
+			input: `---
+title: Test
+date: 2026-01-01 00:00:00
+x-old-key: value1
+y-old-key: value2
+---
+`,
+			opts: PrepareOptions{
+				FrontmatterRewrites: []FrontmatterRewrite{
+					{Match: "-old-", Replace: "-new-"},
+				},
+				Now: fixedNow,
+			},
+			wantFM: map[string]string{
+				"title":     "Test",
+				"date":      "2026-01-01 00:00:00",
+				"x-new-key": "value1",
+				"y-new-key": "value2",
+			},
+			gone: []string{"x-old-key", "y-old-key"},
+		},
+		{
+			name: "empty result drops key",
+			input: `---
+title: Test
+date: 2026-01-01 00:00:00
+author: Alice
+---
+`,
+			opts: PrepareOptions{
+				FrontmatterRewrites: []FrontmatterRewrite{
+					{Match: `^author$`, Replace: ""},
+				},
+				Now: fixedNow,
+			},
+			wantFM: map[string]string{
+				"title": "Test",
+				"date":  "2026-01-01 00:00:00",
+			},
+			gone: []string{"author"},
+		},
+		{
+			name:  "invalid regex returns error",
+			input: "---\nauthor: Alice\ndate: 2026-01-01 00:00:00\n---\n",
+			opts: PrepareOptions{
+				FrontmatterRewrites: []FrontmatterRewrite{
+					{Match: "(", Replace: "x"},
+				},
+				Now: fixedNow,
+			},
+			wantErr: true,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			note, err := Prepare(strings.NewReader(tt.input), tt.opts)
+			if tt.wantErr {
+				if err == nil {
+					t.Fatal("Prepare() err = <nil>, want error")
+				}
+				return
+			}
+			if err != nil {
+				t.Fatalf("Prepare() err = %q", err)
+			}
+
+			for k, want := range tt.wantFM {
+				got, ok := note.Frontmatter.Get(k)
+				if !ok {
+					t.Errorf("Frontmatter.Get(%q) not found, want %q", k, want)
+				} else if got != want {
+					t.Errorf("Frontmatter.Get(%q) = %q, want %q", k, got, want)
+				}
+			}
+			for _, k := range tt.gone {
+				if _, ok := note.Frontmatter.Get(k); ok {
+					t.Errorf("Frontmatter key %q still present after rewrite", k)
+				}
+			}
+		})
+	}
+}

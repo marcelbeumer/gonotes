@@ -71,35 +71,39 @@ Commands:
 gonotes new -t "My Note" -T "programming/go, tools"
 gonotes new -f draft.md
 cat draft.md | gonotes new -  # read note from stdin
-gonotes new -f draft.md -tm '^programming/go$' -tr 'programming/golang'
+gonotes new -f draft.md -Tm '^programming/go$' -Tr 'programming/golang'
+gonotes new -t "My Note" -Fk href -Fv 'https://example.com' -Fk author -Fv 'Alice'
 gonotes new -n                # dry run
 ```
 
 Flags: `-t` title, `-T` tags, `-d` date (default: now),
-`-tm` tag regex match + `-tr` tag regex replace (repeatable pairs),
+`-Tm` tag regex match + `-Tr` tag regex replace (repeatable pairs),
+`-Fk` frontmatter key + `-Fv` frontmatter value (repeatable pairs),
 `-f` file, `-` read from stdin, `-o md|json` (dry run output), `-n` dry run.
 
-`-T` and `-tm/-tr` are mutually exclusive.
+`-T` and `-Tm/-Tr` are mutually exclusive.
 
 **update** updates existing notes by ID, file path, stdin preview, or all notes:
 
 ```
 gonotes update -i 20260328-1 -t "Renamed"
 gonotes update -f notes/by/id/20260328-1-renamed.md -T "programming/go, tools"
-gonotes update -i 20260328-1-some-slug -tm '^(code|programming)/go(/|$)' -tr '$1/golang$2'
-gonotes update -a -tm '^team/' -tr 'org/'
-cat note.md | gonotes update - -tm '^go$' -tr 'golang'
+gonotes update -i 20260328-1-some-slug -Tm '^(code|programming)/go(/|$)' -Tr '$1/golang$2'
+gonotes update -a -Tm '^team/' -Tr 'org/'
+cat note.md | gonotes update - -Tm '^go$' -Tr 'golang'
+gonotes update -i 20260328-1 -Fk status -Fv published
+gonotes update -i 20260328-1 -Fm '^author$' -Fr 'written-by'
 ```
 
 `update` selectors (exactly one): `-i`, `-f`, `-`, `-a`.
 
-`update` mutations (at least one): `-t`, `-T`, `-d`, or `-tm/-tr`.
+`update` mutations (at least one): `-t`, `-T`, `-d`, `-Tm/-Tr`, `-Fk/-Fv`, or `-Fm/-Fr`.
 
 Rules:
 - `-i` accepts only new IDs (`yyyymmdd-N`) with optional slug suffix
 - IDs are immutable; `-i` only selects target notes
 - `-a` cannot be combined with `-t`
-- `-T` and `-tm/-tr` are mutually exclusive
+- `-T` and `-Tm/-Tr` are mutually exclusive
 
 **folder** creates a new directory under `files/` for storing files. The folder
 name follows the same ID format as notes (`yyyymmdd-N-slug`):

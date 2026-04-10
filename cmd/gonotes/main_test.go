@@ -38,13 +38,18 @@ func TestRunNewValidations(t *testing.T) {
 		},
 		{
 			name: "tag rewrite pair mismatch",
-			args: []string{"-tm", "^foo$"},
-			want: "-tm and -tr must be provided in equal counts",
+			args: []string{"-Tm", "^foo$"},
+			want: "-Tm and -Tr must be provided in equal counts",
 		},
 		{
 			name: "tags and rewrites conflict",
-			args: []string{"-T", "foo", "-tm", "^foo$", "-tr", "bar"},
-			want: "cannot combine -T with -tm/-tr",
+			args: []string{"-T", "foo", "-Tm", "^foo$", "-Tr", "bar"},
+			want: "cannot combine -T with -Tm/-Tr",
+		},
+		{
+			name: "frontmatter key-value pair mismatch",
+			args: []string{"-Fk", "href"},
+			want: "-Fk and -Fv must be provided in equal counts",
 		},
 		{
 			name: "unknown output format",
@@ -131,22 +136,40 @@ func TestRunUpdateRejectsTitleWithAll(t *testing.T) {
 }
 
 func TestRunUpdateRejectsTagRewriteMismatch(t *testing.T) {
-	err := runUpdate([]string{"-i", "20260328-1", "-tm", "^foo", "-d", "2026-04-01 10:00:00"})
+	err := runUpdate([]string{"-i", "20260328-1", "-Tm", "^foo", "-d", "2026-04-01 10:00:00"})
 	if err == nil {
 		t.Fatal("runUpdate() err = <nil>, want error")
 	}
-	if !strings.Contains(err.Error(), "-tm and -tr must be provided in equal counts") {
-		t.Fatalf("runUpdate() err = %q, want -tm/-tr mismatch error", err.Error())
+	if !strings.Contains(err.Error(), "-Tm and -Tr must be provided in equal counts") {
+		t.Fatalf("runUpdate() err = %q, want -Tm/-Tr mismatch error", err.Error())
 	}
 }
 
 func TestRunUpdateRejectsTagsAndRewritesTogether(t *testing.T) {
-	err := runUpdate([]string{"-i", "20260328-1", "-T", "foo", "-tm", "^foo$", "-tr", "bar"})
+	err := runUpdate([]string{"-i", "20260328-1", "-T", "foo", "-Tm", "^foo$", "-Tr", "bar"})
 	if err == nil {
 		t.Fatal("runUpdate() err = <nil>, want error")
 	}
-	if !strings.Contains(err.Error(), "cannot combine -T with -tm/-tr") {
-		t.Fatalf("runUpdate() err = %q, want -T/-tm conflict error", err.Error())
+	if !strings.Contains(err.Error(), "cannot combine -T with -Tm/-Tr") {
+		t.Fatalf("runUpdate() err = %q, want -T/-Tm conflict error", err.Error())
+	}
+}
+
+func TestRunUpdateRejectsFrontmatterPairMismatches(t *testing.T) {
+	err := runUpdate([]string{"-i", "20260328-1", "-Fk", "status", "-d", "2026-04-01 10:00:00"})
+	if err == nil {
+		t.Fatal("runUpdate() err = <nil>, want error")
+	}
+	if !strings.Contains(err.Error(), "-Fk and -Fv must be provided in equal counts") {
+		t.Fatalf("runUpdate() err = %q, want -Fk/-Fv mismatch error", err.Error())
+	}
+
+	err = runUpdate([]string{"-i", "20260328-1", "-Fm", "^author$", "-d", "2026-04-01 10:00:00"})
+	if err == nil {
+		t.Fatal("runUpdate() err = <nil>, want error")
+	}
+	if !strings.Contains(err.Error(), "-Fm and -Fr must be provided in equal counts") {
+		t.Fatalf("runUpdate() err = %q, want -Fm/-Fr mismatch error", err.Error())
 	}
 }
 
