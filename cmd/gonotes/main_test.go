@@ -163,14 +163,6 @@ func TestRunUpdateRejectsFrontmatterPairMismatches(t *testing.T) {
 	if !strings.Contains(err.Error(), "-Fk and -Fv must be provided in equal counts") {
 		t.Fatalf("runUpdate() err = %q, want -Fk/-Fv mismatch error", err.Error())
 	}
-
-	err = runUpdate([]string{"-i", "20260328-1", "-Fm", "^author$", "-d", "2026-04-01 10:00:00"})
-	if err == nil {
-		t.Fatal("runUpdate() err = <nil>, want error")
-	}
-	if !strings.Contains(err.Error(), "-Fm and -Fr must be provided in equal counts") {
-		t.Fatalf("runUpdate() err = %q, want -Fm/-Fr mismatch error", err.Error())
-	}
 }
 
 func TestRunUpdateRequiresMutation(t *testing.T) {

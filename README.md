@@ -92,12 +92,11 @@ gonotes update -i 20260328-1-some-slug -Tm '^(code|programming)/go(/|$)' -Tr '$1
 gonotes update -a -Tm '^team/' -Tr 'org/'
 cat note.md | gonotes update - -Tm '^go$' -Tr 'golang'
 gonotes update -i 20260328-1 -Fk status -Fv published
-gonotes update -i 20260328-1 -Fm '^author$' -Fr 'written-by'
 ```
 
 `update` selectors (exactly one): `-i`, `-f`, `-`, `-a`.
 
-`update` mutations (at least one): `-t`, `-T`, `-d`, `-Tm/-Tr`, `-Fk/-Fv`, or `-Fm/-Fr`.
+`update` mutations (at least one): `-t`, `-T`, `-d`, `-Tm/-Tr`, or `-Fk/-Fv`.
 
 Rules:
 - `-i` accepts only new IDs (`yyyymmdd-N`) with optional slug suffix

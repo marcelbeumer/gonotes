@@ -14,13 +14,12 @@ const dateLayout = "2006-01-02 15:04:05"
 // A nil pointer means "not provided"; a non-nil pointer means "explicitly set"
 // (even if the pointed-to string is empty).
 type PrepareOptions struct {
-	Title               *string
-	Tags                *string
-	Date                *string
-	TagRewrites         []TagRewrite
-	ExtraFrontmatter    []FrontmatterField
-	FrontmatterRewrites []FrontmatterRewrite
-	Now                 func() time.Time // for testing; defaults to time.Now if nil
+	Title            *string
+	Tags             *string
+	Date             *string
+	TagRewrites      []TagRewrite
+	ExtraFrontmatter []FrontmatterField
+	Now              func() time.Time // for testing; defaults to time.Now if nil
 }
 
 type TagRewrite struct {
@@ -31,11 +30,6 @@ type TagRewrite struct {
 type FrontmatterField struct {
 	Key   string
 	Value string
-}
-
-type FrontmatterRewrite struct {
-	Match   string
-	Replace string
 }
 
 // Prepare reads a note from r, merges frontmatter fields per opts, and returns
@@ -110,12 +104,6 @@ func Prepare(r io.Reader, opts PrepareOptions) (*Note, error) {
 		note.Frontmatter.Set(f.Key, f.Value)
 	}
 
-	if len(opts.FrontmatterRewrites) > 0 {
-		if err := rewriteFrontmatterKeys(note.Frontmatter, opts.FrontmatterRewrites); err != nil {
-			return nil, fmt.Errorf("prepare: %w", err)
-		}
-	}
-
 	return note, nil
 }
 
@@ -160,60 +148,6 @@ func rewriteTags(tags []string, rewrites []TagRewrite) ([]string, error) {
 	}
 
 	return out, nil
-}
-
-func rewriteFrontmatterKeys(fm *Frontmatter, rewrites []FrontmatterRewrite) error {
-	type compiledRewrite struct {
-		re      *regexp.Regexp
-		replace string
-	}
-	compiled := make([]compiledRewrite, len(rewrites))
-	for i, rw := range rewrites {
-		re, err := regexp.Compile(rw.Match)
-		if err != nil {
-			return fmt.Errorf("invalid frontmatter match regex at index %d (%q): %w", i, rw.Match, err)
-		}
-		compiled[i] = compiledRewrite{re: re, replace: rw.Replace}
-	}
-
-	// Snapshot keys in document order for deterministic iteration.
-	keys := fm.Keys()
-
-	// Compute rewritten key-value pairs, preserving document order.
-	// On collision the later entry (in document order) wins.
-	type entry struct {
-		key   string
-		value string
-	}
-	result := make([]entry, 0, len(keys))
-	seen := make(map[string]int, len(keys)) // new key -> index in result
-	for _, key := range keys {
-		value, _ := fm.Get(key)
-		newKey := key
-		for _, rw := range compiled {
-			newKey = rw.re.ReplaceAllString(newKey, rw.replace)
-		}
-		newKey = strings.TrimSpace(newKey)
-		if newKey == "" {
-			continue
-		}
-		if idx, ok := seen[newKey]; ok {
-			result[idx].value = value
-			continue
-		}
-		seen[newKey] = len(result)
-		result = append(result, entry{key: newKey, value: value})
-	}
-
-	// Clear all original keys, then set the rewritten ones.
-	for _, key := range keys {
-		fm.Unset(key)
-	}
-	for _, e := range result {
-		fm.Set(e.key, e.value)
-	}
-
-	return nil
 }
 
 // StringPtr returns a pointer to s. Convenience for building PrepareOptions.
