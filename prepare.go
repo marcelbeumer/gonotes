@@ -155,6 +155,28 @@ func StringPtr(s string) *string {
 	return &s
 }
 
+func mergeTags(existing, fromFS []string) []string {
+	fsSet := make(map[string]bool, len(fromFS))
+	for _, t := range fromFS {
+		fsSet[t] = true
+	}
+	var result []string
+	seen := make(map[string]bool)
+	for _, t := range existing {
+		if fsSet[t] && !seen[t] {
+			result = append(result, t)
+			seen[t] = true
+		}
+	}
+	for _, t := range fromFS {
+		if !seen[t] {
+			result = append(result, t)
+			seen[t] = true
+		}
+	}
+	return result
+}
+
 // FormatTags joins tags with ", " for use in frontmatter.
 func FormatTags(tags []string) string {
 	return strings.Join(tags, ", ")

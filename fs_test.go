@@ -3,6 +3,7 @@ package gonotes
 import (
 	"os"
 	"path/filepath"
+	"sort"
 	"strings"
 	"testing"
 	"time"
@@ -1654,5 +1655,307 @@ Ccc.`)
 		if !strings.Contains(e.Message, "20260328-1") {
 			t.Errorf("error message should mention the ID, got: %s", e.Message)
 		}
+	}
+}
+
+func TestScanTagsFromFS(t *testing.T) {
+	baseDir := t.TempDir()
+	idDir := filepath.Join(baseDir, "notes", "by", "id")
+
+	writeTestNote(t, idDir, "20260328-1-hello.md", `---
+title: Hello
+date: 2026-03-28 14:30:00
+tags: foo/bar, plain
+---
+
+Body.`)
+
+	writeTestNote(t, idDir, "20260328-2-world.md", `---
+title: World
+date: 2026-03-28 15:00:00
+tags: other
+---
+
+Body.`)
+
+	if err := RebuildSymlinks(baseDir); err != nil {
+		t.Fatalf("RebuildSymlinks() err = %q", err)
+	}
+
+	fsTags, scanErrors, err := ScanTagsFromFS(baseDir)
+	if err != nil {
+		t.Fatalf("ScanTagsFromFS() err = %q", err)
+	}
+	if len(scanErrors) > 0 {
+		t.Errorf("unexpected scan errors: %v", scanErrors)
+	}
+
+	sort.Strings(fsTags["20260328-1"])
+	want1 := []string{"foo/bar", "plain"}
+	if diff := cmp.Diff(want1, fsTags["20260328-1"]); diff != "" {
+		t.Errorf("tags for 20260328-1 diff (-want, +got):\n%s", diff)
+	}
+
+	want2 := []string{"other"}
+	if diff := cmp.Diff(want2, fsTags["20260328-2"]); diff != "" {
+		t.Errorf("tags for 20260328-2 diff (-want, +got):\n%s", diff)
+	}
+}
+
+func TestScanTagsFromFSHierarchical(t *testing.T) {
+	baseDir := t.TempDir()
+	idDir := filepath.Join(baseDir, "notes", "by", "id")
+
+	writeTestNote(t, idDir, "20260328-1-hello.md", `---
+title: Hello
+date: 2026-03-28 14:30:00
+tags: foo/bar, foo/bar/zar
+---
+
+Body.`)
+
+	if err := RebuildSymlinks(baseDir); err != nil {
+		t.Fatalf("RebuildSymlinks() err = %q", err)
+	}
+
+	fsTags, _, err := ScanTagsFromFS(baseDir)
+	if err != nil {
+		t.Fatalf("ScanTagsFromFS() err = %q", err)
+	}
+
+	sort.Strings(fsTags["20260328-1"])
+	want := []string{"foo/bar", "foo/bar/zar"}
+	if diff := cmp.Diff(want, fsTags["20260328-1"]); diff != "" {
+		t.Errorf("tags diff (-want, +got):\n%s", diff)
+	}
+}
+
+func TestScanTagsFromFSNoTags(t *testing.T) {
+	baseDir := t.TempDir()
+
+	_, _, err := ScanTagsFromFS(baseDir)
+	if err != nil {
+		t.Fatalf("ScanTagsFromFS() with no nested dir err = %q", err)
+	}
+}
+
+func TestReverseRebuild(t *testing.T) {
+	baseDir := t.TempDir()
+	idDir := filepath.Join(baseDir, "notes", "by", "id")
+
+	writeTestNote(t, idDir, "20260328-1-hello.md", `---
+title: Hello
+date: 2026-03-28 14:30:00
+tags: foo/bar, plain
+---
+
+Body.`)
+
+	writeTestNote(t, idDir, "20260328-2-world.md", `---
+title: World
+date: 2026-03-28 15:00:00
+tags: other
+---
+
+Body.`)
+
+	if err := RebuildSymlinks(baseDir); err != nil {
+		t.Fatalf("RebuildSymlinks() err = %q", err)
+	}
+
+	nestedDir := filepath.Join(baseDir, "notes", "by", "tags", "nested")
+
+	nestedNew := filepath.Join(nestedDir, "new-tag")
+	if err := os.MkdirAll(nestedNew, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	targetPath := filepath.Join(idDir, "20260328-1-hello.md")
+	if err := os.Symlink(targetPath, filepath.Join(nestedNew, "20260328-1-hello.md")); err != nil {
+		t.Fatal(err)
+	}
+
+	report, err := ReverseRebuild(baseDir)
+	if err != nil {
+		t.Fatalf("ReverseRebuild() err = %q", err)
+	}
+
+	if len(report.Errors) > 0 {
+		t.Errorf("unexpected errors: %v", report.Errors)
+	}
+
+	changedIDs := make(map[string]bool)
+	for _, tc := range report.Changes {
+		changedIDs[tc.ID] = true
+	}
+	if !changedIDs["20260328-1"] {
+		t.Error("expected 20260328-1 to have tag changes")
+	}
+	if changedIDs["20260328-2"] {
+		t.Error("expected 20260328-2 to be unchanged")
+	}
+
+	for _, tc := range report.Changes {
+		if tc.ID == "20260328-1" {
+			want := []string{"foo/bar", "plain", "new-tag"}
+			if diff := cmp.Diff(want, tc.NewTags); diff != "" {
+				t.Errorf("new tags for 20260328-1 diff (-want, +got):\n%s", diff)
+			}
+		}
+	}
+}
+
+func TestReverseRebuildRemoveTag(t *testing.T) {
+	baseDir := t.TempDir()
+	idDir := filepath.Join(baseDir, "notes", "by", "id")
+
+	writeTestNote(t, idDir, "20260328-1-hello.md", `---
+title: Hello
+date: 2026-03-28 14:30:00
+tags: foo/bar, plain
+---
+
+Body.`)
+
+	if err := RebuildSymlinks(baseDir); err != nil {
+		t.Fatalf("RebuildSymlinks() err = %q", err)
+	}
+
+	nestedDir := filepath.Join(baseDir, "notes", "by", "tags", "nested")
+	os.RemoveAll(filepath.Join(nestedDir, "plain"))
+
+	report, err := ReverseRebuild(baseDir)
+	if err != nil {
+		t.Fatalf("ReverseRebuild() err = %q", err)
+	}
+
+	if len(report.Changes) != 1 {
+		t.Fatalf("expected 1 change, got %d", len(report.Changes))
+	}
+
+	tc := report.Changes[0]
+	if tc.ID != "20260328-1" {
+		t.Errorf("change ID = %q, want %q", tc.ID, "20260328-1")
+	}
+	want := []string{"foo/bar"}
+	if diff := cmp.Diff(want, tc.NewTags); diff != "" {
+		t.Errorf("new tags diff (-want, +got):\n%s", diff)
+	}
+}
+
+func TestReverseRebuildRemoveAllTags(t *testing.T) {
+	baseDir := t.TempDir()
+	idDir := filepath.Join(baseDir, "notes", "by", "id")
+
+	writeTestNote(t, idDir, "20260328-1-hello.md", `---
+title: Hello
+date: 2026-03-28 14:30:00
+tags: foo, bar
+---
+
+Body.`)
+
+	if err := RebuildSymlinks(baseDir); err != nil {
+		t.Fatalf("RebuildSymlinks() err = %q", err)
+	}
+
+	os.RemoveAll(filepath.Join(baseDir, "notes", "by", "tags"))
+
+	report, err := ReverseRebuild(baseDir)
+	if err != nil {
+		t.Fatalf("ReverseRebuild() err = %q", err)
+	}
+
+	if len(report.Changes) != 1 {
+		t.Fatalf("expected 1 change, got %d", len(report.Changes))
+	}
+
+	tc := report.Changes[0]
+	if len(tc.NewTags) != 0 {
+		t.Errorf("expected empty new tags, got %v", tc.NewTags)
+	}
+}
+
+func TestExecuteReverseRebuild(t *testing.T) {
+	baseDir := t.TempDir()
+	idDir := filepath.Join(baseDir, "notes", "by", "id")
+
+	writeTestNote(t, idDir, "20260328-1-hello.md", `---
+title: Hello
+date: 2026-03-28 14:30:00
+tags: foo/bar
+---
+
+Body.`)
+
+	if err := RebuildSymlinks(baseDir); err != nil {
+		t.Fatalf("RebuildSymlinks() err = %q", err)
+	}
+
+	nestedDir := filepath.Join(baseDir, "notes", "by", "tags", "nested")
+	newDir := filepath.Join(nestedDir, "new-tag")
+	if err := os.MkdirAll(newDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	targetPath := filepath.Join(idDir, "20260328-1-hello.md")
+	if err := os.Symlink(targetPath, filepath.Join(newDir, "20260328-1-hello.md")); err != nil {
+		t.Fatal(err)
+	}
+
+	report, err := ReverseRebuild(baseDir)
+	if err != nil {
+		t.Fatalf("ReverseRebuild() err = %q", err)
+	}
+
+	if err := ExecuteReverseRebuild(baseDir, report.Changes); err != nil {
+		t.Fatalf("ExecuteReverseRebuild() err = %q", err)
+	}
+
+	content, err := os.ReadFile(filepath.Join(idDir, "20260328-1-hello.md"))
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if !strings.Contains(string(content), "foo/bar") {
+		t.Error("file should still contain foo/bar tag")
+	}
+	if !strings.Contains(string(content), "new-tag") {
+		t.Error("file should contain new-tag")
+	}
+}
+
+func TestExecuteReverseRebuildRemovesAllTags(t *testing.T) {
+	baseDir := t.TempDir()
+	idDir := filepath.Join(baseDir, "notes", "by", "id")
+
+	writeTestNote(t, idDir, "20260328-1-hello.md", `---
+title: Hello
+date: 2026-03-28 14:30:00
+tags: foo
+---
+
+Body.`)
+
+	if err := RebuildSymlinks(baseDir); err != nil {
+		t.Fatalf("RebuildSymlinks() err = %q", err)
+	}
+
+	os.RemoveAll(filepath.Join(baseDir, "notes", "by", "tags"))
+
+	report, err := ReverseRebuild(baseDir)
+	if err != nil {
+		t.Fatalf("ReverseRebuild() err = %q", err)
+	}
+
+	if err := ExecuteReverseRebuild(baseDir, report.Changes); err != nil {
+		t.Fatalf("ExecuteReverseRebuild() err = %q", err)
+	}
+
+	content, err := os.ReadFile(filepath.Join(idDir, "20260328-1-hello.md"))
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if strings.Contains(string(content), "tags:") {
+		t.Error("file should not contain tags field after removing all tags")
 	}
 }

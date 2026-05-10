@@ -21,6 +21,7 @@ Commands:
   update     Update an existing note
   folder     Create a new folder for file storage
   rebuild    Scan notes, report issues, rename files, rebuild symlinks
+             Use -r for reverse rebuild: sync tags from filesystem into notes
 `
 
 func main() {
@@ -477,13 +478,17 @@ Flags:
 
 func runRebuild(args []string) error {
 	fs := flag.NewFlagSet("rebuild", flag.ContinueOnError)
+	reverse := fs.Bool("r", false, "reverse rebuild: sync tags from filesystem into note files")
 	confirm := fs.Bool("y", false, "skip confirmation prompts")
 
 	fs.Usage = func() {
-		fmt.Fprintf(os.Stderr, `Usage: gonotes rebuild [-y]
+		fmt.Fprintf(os.Stderr, `Usage: gonotes rebuild [-y] [-r]
 
 Scan notes/by/id/, report broken links and filename mismatches,
 rename files, and rebuild symlink structures.
+
+With -r, scan tags from the nested/ symlink structure and update
+note frontmatter to match, replacing the normal rebuild flow.
 
 Flags:
 `)
@@ -497,6 +502,10 @@ Flags:
 	baseDir, err := os.Getwd()
 	if err != nil {
 		return fmt.Errorf("get working directory: %w", err)
+	}
+
+	if *reverse {
+		return runReverseRebuild(baseDir, *confirm)
 	}
 
 	idDir := filepath.Join(baseDir, "notes", "by", "id")
@@ -531,6 +540,31 @@ Flags:
 		return err
 	}
 	fmt.Fprintln(os.Stderr, "Symlinks rebuilt.")
+
+	return nil
+}
+
+func runReverseRebuild(baseDir string, confirm bool) error {
+	report, err := gonotes.ReverseRebuild(baseDir)
+	if err != nil {
+		return err
+	}
+
+	fmt.Fprint(os.Stderr, report.String())
+
+	if len(report.Changes) == 0 {
+		return nil
+	}
+
+	if !confirm && !promptYN("Apply tag changes?") {
+		fmt.Fprintln(os.Stderr, "Skipping tag changes.")
+		return nil
+	}
+
+	if err := gonotes.ExecuteReverseRebuild(baseDir, report.Changes); err != nil {
+		return err
+	}
+	fmt.Fprintf(os.Stderr, "Updated %d note(s).\n", len(report.Changes))
 
 	return nil
 }
