@@ -20,7 +20,7 @@ Recognized frontmatter fields:
 
 - **title** -- used for the filename slug and symlinks
 - **date** -- used for `notes/by/date/` symlinks
-- **tags** -- comma- or space-separated, may be nested (`foo/bar`); used for `notes/by/tags/` symlinks
+- **tags** -- comma- or space-separated, may be hierarchical (`foo/bar`); used for `notes/by/tags/` symlinks
 - **ignore-links** -- comma-separated glob patterns; matching `[[link]]` targets
   are excluded from broken-link checking during `rebuild`. Patterns use
   `filepath.Match` syntax (`*` matches within a single path segment, `?` matches
@@ -41,7 +41,7 @@ Source of truth is `notes/by/id/`. Symlinks are derived from frontmatter:
 ```
 notes/by/id/20260328-1-my-note.md              # the actual file
 notes/by/date/2026-03-28/20260328-1-my-note.md # symlink
-notes/by/tags/nested/programming/go/20260328-1-my-note.md  # symlink
+notes/by/tags/programming/go/20260328-1-my-note.md  # symlink
 ```
 
 Files are stored in `files/` using ID-based folder names:
