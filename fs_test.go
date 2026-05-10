@@ -1682,12 +1682,9 @@ Body.`)
 		t.Fatalf("RebuildSymlinks() err = %q", err)
 	}
 
-	fsTags, scanErrors, err := ScanTagsFromFS(baseDir)
+	fsTags, err := ScanTagsFromFS(baseDir)
 	if err != nil {
 		t.Fatalf("ScanTagsFromFS() err = %q", err)
-	}
-	if len(scanErrors) > 0 {
-		t.Errorf("unexpected scan errors: %v", scanErrors)
 	}
 
 	sort.Strings(fsTags["20260328-1"])
@@ -1718,7 +1715,7 @@ Body.`)
 		t.Fatalf("RebuildSymlinks() err = %q", err)
 	}
 
-	fsTags, _, err := ScanTagsFromFS(baseDir)
+	fsTags, err := ScanTagsFromFS(baseDir)
 	if err != nil {
 		t.Fatalf("ScanTagsFromFS() err = %q", err)
 	}
@@ -1733,9 +1730,41 @@ Body.`)
 func TestScanTagsFromFSNoTags(t *testing.T) {
 	baseDir := t.TempDir()
 
-	_, _, err := ScanTagsFromFS(baseDir)
+	_, err := ScanTagsFromFS(baseDir)
 	if err != nil {
 		t.Fatalf("ScanTagsFromFS() with no nested dir err = %q", err)
+	}
+}
+
+func TestScanTagsFromFSPlainFile(t *testing.T) {
+	baseDir := t.TempDir()
+	idDir := filepath.Join(baseDir, "notes", "by", "id")
+
+	writeTestNote(t, idDir, "20260328-1-hello.md", `---
+title: Hello
+date: 2026-03-28 14:30:00
+tags: existing
+---
+
+Body.`)
+
+	nestedDir := filepath.Join(baseDir, "notes", "by", "tags", "nested")
+	newTag := filepath.Join(nestedDir, "new-tag")
+	if err := os.MkdirAll(newTag, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(newTag, "20260328-1-wrong-suffix.md"), []byte(""), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	fsTags, err := ScanTagsFromFS(baseDir)
+	if err != nil {
+		t.Fatalf("ScanTagsFromFS() err = %q", err)
+	}
+
+	want := []string{"new-tag"}
+	if diff := cmp.Diff(want, fsTags["20260328-1"]); diff != "" {
+		t.Errorf("tags diff (-want, +got):\n%s", diff)
 	}
 }
 
@@ -1769,8 +1798,7 @@ Body.`)
 	if err := os.MkdirAll(nestedNew, 0o755); err != nil {
 		t.Fatal(err)
 	}
-	targetPath := filepath.Join(idDir, "20260328-1-hello.md")
-	if err := os.Symlink(targetPath, filepath.Join(nestedNew, "20260328-1-hello.md")); err != nil {
+	if err := os.WriteFile(filepath.Join(nestedNew, "20260328-1-hello.md"), []byte(""), 0o644); err != nil {
 		t.Fatal(err)
 	}
 
@@ -1896,8 +1924,7 @@ Body.`)
 	if err := os.MkdirAll(newDir, 0o755); err != nil {
 		t.Fatal(err)
 	}
-	targetPath := filepath.Join(idDir, "20260328-1-hello.md")
-	if err := os.Symlink(targetPath, filepath.Join(newDir, "20260328-1-hello.md")); err != nil {
+	if err := os.WriteFile(filepath.Join(newDir, "20260328-1-hello.md"), []byte(""), 0o644); err != nil {
 		t.Fatal(err)
 	}
 

@@ -560,15 +560,13 @@ func ExecuteRenames(idDir string, renames []Rename) error {
 	return nil
 }
 
-func ScanTagsFromFS(baseDir string) (map[string][]string, []ScanError, error) {
+func ScanTagsFromFS(baseDir string) (map[string][]string, error) {
 	nestedDir := filepath.Join(baseDir, "notes", "by", "tags", "nested")
-	idDir := filepath.Join(baseDir, "notes", "by", "id")
 
 	result := make(map[string][]string)
-	var scanErrors []ScanError
 
 	if _, err := os.Stat(nestedDir); os.IsNotExist(err) {
-		return result, nil, nil
+		return result, nil
 	}
 
 	err := filepath.WalkDir(nestedDir, func(path string, d fs.DirEntry, err error) error {
@@ -582,44 +580,14 @@ func ScanTagsFromFS(baseDir string) (map[string][]string, []ScanError, error) {
 			return nil
 		}
 
+		id, parsed := IDFromFilename(d.Name())
+		if !parsed {
+			return nil
+		}
+
 		rel, err := filepath.Rel(nestedDir, path)
 		if err != nil {
 			return fmt.Errorf("scan tags: %w", err)
-		}
-
-		info, err := os.Lstat(path)
-		if err != nil {
-			return fmt.Errorf("scan tags: lstat %s: %w", path, err)
-		}
-		if info.Mode()&os.ModeSymlink == 0 {
-			return nil
-		}
-
-		targetResolved, err := filepath.EvalSymlinks(path)
-		if err != nil {
-			scanErrors = append(scanErrors, ScanError{
-				Filename: d.Name(),
-				Message:  fmt.Sprintf("broken symlink: %v", err),
-			})
-			return nil
-		}
-
-		targetName := filepath.Base(targetResolved)
-		id, parsed := IDFromFilename(targetName)
-		if !parsed {
-			scanErrors = append(scanErrors, ScanError{
-				Filename: targetName,
-				Message:  "symlink target does not have a parseable ID",
-			})
-			return nil
-		}
-
-		if _, err := os.Stat(filepath.Join(idDir, targetName)); err != nil {
-			scanErrors = append(scanErrors, ScanError{
-				Filename: targetName,
-				Message:  "symlink target not found in notes/by/id",
-			})
-			return nil
 		}
 
 		tagPath := filepath.Dir(rel)
@@ -629,7 +597,7 @@ func ScanTagsFromFS(baseDir string) (map[string][]string, []ScanError, error) {
 		return nil
 	})
 	if err != nil {
-		return nil, nil, fmt.Errorf("scan tags: %w", err)
+		return nil, fmt.Errorf("scan tags: %w", err)
 	}
 
 	for id, tags := range result {
@@ -637,7 +605,7 @@ func ScanTagsFromFS(baseDir string) (map[string][]string, []ScanError, error) {
 		result[id] = tags
 	}
 
-	return result, scanErrors, nil
+	return result, nil
 }
 
 type TagChange struct {
@@ -686,7 +654,7 @@ func (r *ReverseRebuildReport) String() string {
 }
 
 func ReverseRebuild(baseDir string) (*ReverseRebuildReport, error) {
-	fsTags, scanErrors, err := ScanTagsFromFS(baseDir)
+	fsTags, err := ScanTagsFromFS(baseDir)
 	if err != nil {
 		return nil, fmt.Errorf("reverse rebuild: %w", err)
 	}
@@ -699,7 +667,7 @@ func ReverseRebuild(baseDir string) (*ReverseRebuildReport, error) {
 	}
 	defer f.Close()
 
-	report := &ReverseRebuildReport{Errors: scanErrors}
+	report := &ReverseRebuildReport{}
 
 	for {
 		entries, err := f.ReadDir(readDirBatch)
