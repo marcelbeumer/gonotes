@@ -191,7 +191,7 @@ func (n *Note) Markdown() string {
 }
 
 type PrepareOptions struct {
-	Title            *string
+	Title            string
 	Tags             []string
 	ExtraFrontmatter []FrontmatterField
 	Now              func() time.Time
@@ -218,8 +218,8 @@ func Prepare(r io.Reader, opts PrepareOptions) (*Note, error) {
 		note = NewNote()
 	}
 
-	if opts.Title != nil {
-		note.Frontmatter.Set("title", *opts.Title)
+	if opts.Title != "" {
+		note.Frontmatter.Set("title", opts.Title)
 	}
 
 	if len(opts.Tags) > 0 {
@@ -251,8 +251,4 @@ func Prepare(r io.Reader, opts PrepareOptions) (*Note, error) {
 
 func FormatTags(tags []string) string {
 	return strings.Join(tags, ", ")
-}
-
-func StringPtr(s string) *string {
-	return &s
 }

@@ -78,13 +78,14 @@ func NextID(dir string, now time.Time) (string, error) {
 }
 
 func NoteFilename(id, slug string) string {
-	if slug == "" {
-		return id + ".md"
-	}
-	return id + "-" + slug + ".md"
+	return idName(id, slug) + ".md"
 }
 
 func FolderName(id, slug string) string {
+	return idName(id, slug)
+}
+
+func idName(id, slug string) string {
 	if slug == "" {
 		return id
 	}

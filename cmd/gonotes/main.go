@@ -124,16 +124,20 @@ Flags:
 		r = f
 	}
 
+	var setTitle bool
+	fs.Visit(func(f *flag.Flag) {
+		if f.Name == "t" {
+			setTitle = true
+		}
+	})
+
 	opts := gonotes.PrepareOptions{
 		Tags:             allTags,
 		ExtraFrontmatter: extraFM,
 	}
-	fs.Visit(func(f *flag.Flag) {
-		switch f.Name {
-		case "t":
-			opts.Title = title
-		}
-	})
+	if setTitle {
+		opts.Title = *title
+	}
 
 	baseDir, err := os.Getwd()
 	if err != nil {

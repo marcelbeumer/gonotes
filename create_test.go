@@ -62,7 +62,7 @@ func TestCreateNoteUsesNextID(t *testing.T) {
 	writeTestNote(t, idDir, "20260328-3-existing.md", "---\ntitle: Existing\n---\n")
 
 	opts := PrepareOptions{
-		Title: StringPtr("Generated ID"),
+		Title: "Generated ID",
 		Now:   now,
 	}
 
@@ -86,7 +86,7 @@ func TestCreateNoteDryRun(t *testing.T) {
 	now := func() time.Time { return testTime }
 
 	opts := PrepareOptions{
-		Title: StringPtr("Dry Run"),
+		Title: "Dry Run",
 		Tags:  []string{"test"},
 		Now:   now,
 	}
@@ -121,7 +121,7 @@ func TestCreateNoteSequentialIDs(t *testing.T) {
 	now := func() time.Time { return testTime }
 
 	opts := PrepareOptions{
-		Title: StringPtr("First"),
+		Title: "First",
 		Now:   now,
 	}
 
@@ -133,7 +133,7 @@ func TestCreateNoteSequentialIDs(t *testing.T) {
 		t.Errorf("first ID = %q, want %q", note1.ID, "20260328-1")
 	}
 
-	opts.Title = StringPtr("Second")
+	opts.Title = "Second"
 	note2, _, err := CreateNote(baseDir, nil, opts, false)
 	if err != nil {
 		t.Fatalf("second CreateNote() err = %q", err)
@@ -148,7 +148,7 @@ func TestCreateNoteAndRebuildSymlinksAreStable(t *testing.T) {
 	now := func() time.Time { return testTime }
 
 	opts := PrepareOptions{
-		Title: StringPtr("Stable Symlinks"),
+		Title: "Stable Symlinks",
 		Tags:  []string{"foo/bar", "baz"},
 		Now:   now,
 	}

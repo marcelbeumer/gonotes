@@ -2,9 +2,7 @@ package gonotes
 
 import (
 	"bytes"
-	"errors"
 	"fmt"
-	"io"
 	"io/fs"
 	"os"
 	"path/filepath"
@@ -125,71 +123,35 @@ func ReverseRebuild(baseDir string) (*ReverseRebuildReport, error) {
 
 	idDir := filepath.Join(baseDir, "notes", "by", "id")
 
-	f, err := os.Open(idDir)
+	notes, readErrs, err := readNotesFromDir(idDir)
 	if err != nil {
 		return nil, fmt.Errorf("reverse rebuild: %w", err)
 	}
-	defer f.Close()
 
 	report := &ReverseRebuildReport{}
+	report.Errors = append(report.Errors, readErrs...)
 
-	for {
-		entries, err := f.ReadDir(readDirBatch)
-		for _, e := range entries {
-			if e.IsDir() {
-				continue
-			}
-			name := e.Name()
-			if !strings.HasSuffix(name, ".md") {
-				continue
-			}
-
-			id, parsed := IDFromFilename(name)
-			if !parsed {
-				continue
-			}
-
-			path := filepath.Join(idDir, name)
-			nf, err := os.Open(path)
-			if err != nil {
-				report.Errors = append(report.Errors, ScanError{
-					Filename: name,
-					Message:  fmt.Sprintf("open: %v", err),
-				})
-				continue
-			}
-
-			note, err := ReadNote(id, nf)
-			nf.Close()
-			if err != nil {
-				report.Errors = append(report.Errors, ScanError{
-					Filename: name,
-					Message:  fmt.Sprintf("read note: %v", err),
-				})
-				continue
-			}
-
-			fromFS := fsTags[id]
-			newTags := reconcileTags(note.Tags, fromFS)
-
-			if tagsEqual(note.Tags, newTags) {
-				report.Unchanged++
-				continue
-			}
-
-			report.Changes = append(report.Changes, TagChange{
-				ID:      id,
-				Path:    path,
-				OldTags: note.Tags,
-				NewTags: newTags,
-			})
+	for i := range notes {
+		note := &notes[i]
+		id, parsed := IDFromFilename(NoteFilename(note.ID, note.Slug))
+		if !parsed {
+			continue
 		}
-		if err != nil {
-			if errors.Is(err, io.EOF) {
-				break
-			}
-			return nil, fmt.Errorf("reverse rebuild: %w", err)
+
+		fromFS := fsTags[id]
+		newTags := reconcileTags(note.Tags, fromFS)
+
+		if tagsEqual(note.Tags, newTags) {
+			report.Unchanged++
+			continue
 		}
+
+		report.Changes = append(report.Changes, TagChange{
+			ID:      id,
+			Path:    filepath.Join(idDir, NoteFilename(note.ID, note.Slug)),
+			OldTags: note.Tags,
+			NewTags: newTags,
+		})
 	}
 
 	sort.Slice(report.Changes, func(i, j int) bool {
@@ -216,7 +178,7 @@ func ExecuteReverseRebuild(baseDir string, changes []TagChange) error {
 		} else {
 			note.Frontmatter.Set("tags", FormatTags(tc.NewTags))
 		}
-		note.Tags = tc.NewTags
+		note.deriveFields()
 
 		if err := os.WriteFile(tc.Path, []byte(note.Markdown()), 0o644); err != nil {
 			return fmt.Errorf("reverse rebuild: write %s: %w", tc.Path, err)

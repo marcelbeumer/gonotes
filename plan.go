@@ -46,6 +46,9 @@ func NotePlan(note *Note) *Plan {
 	}
 }
 
+// linkEntries returns the symlinks for a note. The note must have had
+// deriveFields called before this (linkEntries reads note.Tags and
+// note.Frontmatter directly).
 func linkEntries(note *Note, filename string) []Link {
 	var links []Link
 	seen := map[string]struct{}{}

@@ -1,9 +1,7 @@
 package gonotes
 
 import (
-	"errors"
 	"fmt"
-	"io"
 	"os"
 	"path/filepath"
 	"sort"
@@ -75,11 +73,10 @@ func ScanNotes(baseDir string) (*RebuildReport, error) {
 	idDir := filepath.Join(baseDir, "notes", "by", "id")
 	filesDir := filepath.Join(baseDir, "files")
 
-	f, err := os.Open(idDir)
+	files, readErrs, err := readNoteFiles(idDir)
 	if err != nil {
 		return nil, fmt.Errorf("scan notes: %w", err)
 	}
-	defer f.Close()
 
 	type noteInfo struct {
 		id            string
@@ -89,94 +86,69 @@ func ScanNotes(baseDir string) (*RebuildReport, error) {
 		ignoreLinks   []string
 	}
 
-	var notes []noteInfo
+	var infos []noteInfo
 	var scanErrors []ScanError
 	maxNums := map[string]int{}
 	idSet := make(map[string]struct{})
 
-	for {
-		entries, err := f.ReadDir(readDirBatch)
-		for _, e := range entries {
-			if e.IsDir() {
-				continue
-			}
-			name := e.Name()
-			if !strings.HasSuffix(name, ".md") {
-				continue
-			}
+	for i := range files {
+		nf := &files[i]
+		name := nf.Filename
+		id, parsed := IDFromFilename(name)
 
-			id, parsed := IDFromFilename(name)
-
-			path := filepath.Join(idDir, name)
-			nf, err := os.Open(path)
-			if err != nil {
-				return nil, fmt.Errorf("scan notes: open %s: %w", name, err)
-			}
-
-			note, err := ReadNote(id, nf)
-			nf.Close()
-			if err != nil {
-				return nil, fmt.Errorf("scan notes: read %s: %w", name, err)
-			}
-
-			correctName := name
-			if parsed {
-				correctName = NoteFilename(id, note.Slug)
-			} else if !note.Date.IsZero() {
-				prefix := idPrefix(note.Date)
-				if _, ok := maxNums[prefix]; !ok {
-					maxNum, err := MaxNumFromDir(idDir, note.Date)
-					if err != nil {
-						return nil, fmt.Errorf("max num from dir: %w", err)
-					}
-					maxNums[prefix] = maxNum
+		correctName := name
+		if parsed {
+			correctName = NoteFilename(id, nf.Slug)
+		} else if !nf.Date.IsZero() {
+			prefix := idPrefix(nf.Date)
+			if _, ok := maxNums[prefix]; !ok {
+				maxNum, err := MaxNumFromDir(idDir, nf.Date)
+				if err != nil {
+					return nil, fmt.Errorf("max num from dir: %w", err)
 				}
-				num := maxNums[prefix] + 1
-				id := fmtID(prefix, num)
-				correctName = NoteFilename(id, note.Slug)
-				maxNums[prefix] = num
-			} else {
-				scanErrors = append(scanErrors, ScanError{
-					Filename: name,
-					Message:  "cannot determine note ID (no parseable ID and no date)",
-				})
-				continue
+				maxNums[prefix] = maxNum
 			}
-
-			if _, exists := idSet[id]; exists {
-				scanErrors = append(scanErrors, ScanError{
-					Filename: name,
-					Message:  fmt.Sprintf("duplicate note ID %q", id),
-				})
-				continue
-			}
-			idSet[id] = struct{}{}
-
-			notes = append(notes, noteInfo{
-				id:            id,
-				currentName:   name,
-				correctName:   correctName,
-				internalLinks: note.InternalLinks,
-				ignoreLinks:   note.IgnoreLinks,
+			num := maxNums[prefix] + 1
+			newID := fmtID(prefix, num)
+			correctName = NoteFilename(newID, nf.Slug)
+			maxNums[prefix] = num
+		} else {
+			scanErrors = append(scanErrors, ScanError{
+				Filename: name,
+				Message:  "cannot determine note ID (no parseable ID and no date)",
 			})
+			continue
 		}
-		if err != nil {
-			if errors.Is(err, io.EOF) {
-				break
-			}
-			return nil, fmt.Errorf("scan notes: read dir: %w", err)
+
+		if _, exists := idSet[id]; exists {
+			scanErrors = append(scanErrors, ScanError{
+				Filename: name,
+				Message:  fmt.Sprintf("duplicate note ID %q", id),
+			})
+			continue
 		}
+		idSet[id] = struct{}{}
+
+		infos = append(infos, noteInfo{
+			id:            id,
+			currentName:   name,
+			correctName:   correctName,
+			internalLinks: nf.InternalLinks,
+			ignoreLinks:   nf.IgnoreLinks,
+		})
 	}
 
-	sort.Slice(notes, func(i, j int) bool {
-		return notes[i].id < notes[j].id
+	scanErrors = append(scanErrors, readErrs...)
+
+	sort.Slice(infos, func(i, j int) bool {
+		return infos[i].id < infos[j].id
 	})
 
 	report := &RebuildReport{
 		Errors: scanErrors,
 	}
 
-	for _, n := range notes {
+	for _, n := range infos {
 		for _, target := range n.internalLinks {
 			if matchesAny(target, n.ignoreLinks) {
 				continue
@@ -233,48 +205,17 @@ func RebuildSymlinks(baseDir string) error {
 		}
 	}
 
-	f, err := os.Open(idDir)
+	files, _, err := readNoteFiles(idDir)
 	if err != nil {
 		return fmt.Errorf("rebuild symlinks: %w", err)
 	}
-	defer f.Close()
 
-	for {
-		entries, err := f.ReadDir(readDirBatch)
-		for _, e := range entries {
-			if e.IsDir() {
-				continue
-			}
-			name := e.Name()
-			if !strings.HasSuffix(name, ".md") {
-				continue
-			}
-
-			id, _ := IDFromFilename(name)
-
-			path := filepath.Join(idDir, name)
-			nf, err := os.Open(path)
-			if err != nil {
-				return fmt.Errorf("rebuild symlinks: open %s: %w", name, err)
-			}
-
-			note, err := ReadNote(id, nf)
-			nf.Close()
-			if err != nil {
-				return fmt.Errorf("rebuild symlinks: read %s: %w", name, err)
-			}
-
-			links := linkEntries(note, name)
-			plan := &Plan{Links: links}
-			if err := plan.CreateLinks(baseDir); err != nil {
-				return fmt.Errorf("rebuild symlinks: %w", err)
-			}
-		}
-		if err != nil {
-			if errors.Is(err, io.EOF) {
-				break
-			}
-			return fmt.Errorf("rebuild symlinks: read dir: %w", err)
+	for i := range files {
+		nf := &files[i]
+		links := linkEntries(&nf.Note, nf.Filename)
+		plan := &Plan{Links: links}
+		if err := plan.CreateLinks(baseDir); err != nil {
+			return fmt.Errorf("rebuild symlinks: %w", err)
 		}
 	}
 
