@@ -1,7 +1,6 @@
 package gonotes
 
 import (
-	"encoding/json"
 	"strings"
 	"testing"
 	"time"
@@ -9,13 +8,19 @@ import (
 	"github.com/google/go-cmp/cmp"
 )
 
+var fixedNow = func() time.Time {
+	return time.Date(2026, 3, 28, 14, 30, 0, 0, time.Local)
+}
+
+var testTime = time.Date(2026, 3, 28, 14, 30, 0, 0, time.UTC)
+
 func TestReadNote(t *testing.T) {
 	tests := []struct {
 		name    string
 		id      string
 		input   string
 		wantErr bool
-		want    *Note // checked field by field, Frontmatter checked via Get
+		want    *Note
 		wantFM  map[string]string
 	}{
 		{
@@ -149,15 +154,26 @@ tags:  foo ,  bar/baz ,  ,  qux
 			},
 		},
 		{
-			name: "no title means empty slug",
+			name: "tags space separated",
 			id:   "20260328-10",
+			input: `---
+tags: foo bar/baz qux
+---`,
+			want: &Note{
+				ID:   "20260328-10",
+				Tags: []string{"foo", "bar/baz", "qux"},
+			},
+		},
+		{
+			name: "no title means empty slug",
+			id:   "20260328-11",
 			input: `---
 date: 2026-03-28 10:00:00
 ---
 
 Body without title in frontmatter.`,
 			want: &Note{
-				ID:   "20260328-10",
+				ID:   "20260328-11",
 				Body: "\nBody without title in frontmatter.",
 			},
 			wantFM: map[string]string{
@@ -166,29 +182,29 @@ Body without title in frontmatter.`,
 		},
 		{
 			name:    "malformed yaml returns error",
-			id:      "20260328-11",
+			id:      "20260328-12",
 			input:   "---\n\t bad yaml: [unterminated\n---\n",
 			wantErr: true,
 		},
 		{
 			name: "single tag no comma",
-			id:   "20260328-12",
+			id:   "20260328-13",
 			input: `---
 tags: single-tag
 ---`,
 			want: &Note{
-				ID:   "20260328-12",
+				ID:   "20260328-13",
 				Tags: []string{"single-tag"},
 			},
 		},
 		{
 			name: "nested tag preserved",
-			id:   "20260328-13",
+			id:   "20260328-14",
 			input: `---
 tags: bookmark/npm/request
 ---`,
 			want: &Note{
-				ID:   "20260328-13",
+				ID:   "20260328-14",
 				Tags: []string{"bookmark/npm/request"},
 			},
 		},
@@ -228,7 +244,6 @@ tags: bookmark/npm/request
 				t.Errorf("InternalLinks diff (-want, +got):\n%s", diff)
 			}
 
-			// Check specific frontmatter values if provided.
 			for k, v := range tt.wantFM {
 				gotV, ok := got.Frontmatter.Get(k)
 				if !ok {
@@ -242,7 +257,6 @@ tags: bookmark/npm/request
 }
 
 func TestReadNotePreservesFrontmatter(t *testing.T) {
-	// Frontmatter should preserve all keys, not just the recognized ones.
 	input := `---
 title: Test
 date: 2026-03-28 10:00:00
@@ -388,13 +402,16 @@ func TestParseTags(t *testing.T) {
 		{",,,", nil},
 		{"", nil},
 		{"a,,b", []string{"a", "b"}},
+		{"foo bar baz", []string{"foo", "bar", "baz"}},
+		{"foo/bar  this/that", []string{"foo/bar", "this/that"}},
+		{"  foo   bar  ", []string{"foo", "bar"}},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.input, func(t *testing.T) {
-			got := parseTags(tt.input)
+			got := ParseTags(tt.input)
 			if diff := cmp.Diff(tt.want, got); diff != "" {
-				t.Errorf("parseTags(%q) diff (-want, +got):\n%s", tt.input, diff)
+				t.Errorf("ParseTags(%q) diff (-want, +got):\n%s", tt.input, diff)
 			}
 		})
 	}
@@ -422,75 +439,6 @@ func TestParseInternalLinks(t *testing.T) {
 				t.Errorf("parseInternalLinks() diff (-want, +got):\n%s", diff)
 			}
 		})
-	}
-}
-
-func TestJSON(t *testing.T) {
-	input := `---
-title: Hello world
-date: 2026-03-28 10:00:00
-tags: foo/bar, baz
-href: https://example.com
----
-
-Body with [[20260101-1]] and [[20260102-3]].`
-
-	note, err := ReadNote("20260328-1", strings.NewReader(input))
-	if err != nil {
-		t.Fatalf("ReadNote() err = %q", err)
-	}
-
-	b, err := note.JSON()
-	if err != nil {
-		t.Fatalf("JSON() err = %q", err)
-	}
-
-	// Unmarshal into a generic structure to verify fields.
-	var got map[string]any
-	if err := json.Unmarshal(b, &got); err != nil {
-		t.Fatalf("json.Unmarshal() err = %q", err)
-	}
-
-	if got["id"] != "20260328-1" {
-		t.Errorf("id = %v, want %q", got["id"], "20260328-1")
-	}
-	if got["title"] != "Hello world" {
-		t.Errorf("title = %v, want %q", got["title"], "Hello world")
-	}
-	if got["slug"] != "hello-world" {
-		t.Errorf("slug = %v, want %q", got["slug"], "hello-world")
-	}
-
-	tags, ok := got["tags"].([]any)
-	if !ok {
-		t.Fatalf("tags is not an array: %T", got["tags"])
-	}
-	wantTags := []any{"foo/bar", "baz"}
-	if diff := cmp.Diff(wantTags, tags); diff != "" {
-		t.Errorf("tags diff (-want, +got):\n%s", diff)
-	}
-
-	links, ok := got["internalLinks"].([]any)
-	if !ok {
-		t.Fatalf("internalLinks is not an array: %T", got["internalLinks"])
-	}
-	wantLinks := []any{"20260101-1", "20260102-3"}
-	if diff := cmp.Diff(wantLinks, links); diff != "" {
-		t.Errorf("internalLinks diff (-want, +got):\n%s", diff)
-	}
-
-	fm, ok := got["frontmatter"].(map[string]any)
-	if !ok {
-		t.Fatalf("frontmatter is not an object: %T", got["frontmatter"])
-	}
-	if fm["title"] != "Hello world" {
-		t.Errorf("frontmatter.title = %v, want %q", fm["title"], "Hello world")
-	}
-	if fm["href"] != "https://example.com" {
-		t.Errorf("frontmatter.href = %v, want %q", fm["href"], "https://example.com")
-	}
-	if fm["date"] != "2026-03-28 10:00:00" {
-		t.Errorf("frontmatter.date = %v, want %q", fm["date"], "2026-03-28 10:00:00")
 	}
 }
 
@@ -539,33 +487,6 @@ date: not-a-date
 	}
 }
 
-func TestJSONOmitsEmptyFields(t *testing.T) {
-	note := NewNote()
-	note.Frontmatter.Set("date", "2026-01-01 00:00:00")
-
-	b, err := note.JSON()
-	if err != nil {
-		t.Fatalf("JSON() err = %q", err)
-	}
-
-	var got map[string]any
-	if err := json.Unmarshal(b, &got); err != nil {
-		t.Fatalf("json.Unmarshal() err = %q", err)
-	}
-
-	// These should be omitted (omitempty).
-	for _, key := range []string{"id", "title", "slug", "tags", "body", "internalLinks"} {
-		if _, ok := got[key]; ok {
-			t.Errorf("expected %q to be omitted, but it was present: %v", key, got[key])
-		}
-	}
-
-	// Frontmatter should still be present.
-	if _, ok := got["frontmatter"]; !ok {
-		t.Error("expected frontmatter to be present")
-	}
-}
-
 func TestReadNoteIgnoreLinks(t *testing.T) {
 	tests := []struct {
 		name  string
@@ -605,6 +526,478 @@ See [[20260403-99]] and [[some-folder/doc.pdf]].`,
 			}
 			if diff := cmp.Diff(tt.want, note.IgnoreLinks); diff != "" {
 				t.Errorf("IgnoreLinks mismatch (-want +got):\n%s", diff)
+			}
+		})
+	}
+}
+
+func TestPrepare(t *testing.T) {
+	tests := []struct {
+		name    string
+		input   string
+		opts    PrepareOptions
+		wantFM  map[string]string
+		wantErr bool
+	}{
+		{
+			name:  "nil reader produces note with date default",
+			input: "",
+			opts:  PrepareOptions{Now: fixedNow},
+			wantFM: map[string]string{
+				"date": "2026-03-28 14:30:00",
+			},
+		},
+		{
+			name:  "nil reader with title and tags",
+			input: "",
+			opts: PrepareOptions{
+				Title: StringPtr("New note"),
+				Tags:  []string{"foo", "bar"},
+				Now:   fixedNow,
+			},
+			wantFM: map[string]string{
+				"title": "New note",
+				"tags":  "foo, bar",
+				"date":  "2026-03-28 14:30:00",
+			},
+		},
+		{
+			name: "explicit title overwrites existing",
+			input: `---
+title: Old title
+date: 2026-01-01 00:00:00
+---
+
+Body.`,
+			opts: PrepareOptions{
+				Title: StringPtr("New title"),
+				Now:   fixedNow,
+			},
+			wantFM: map[string]string{
+				"title": "New title",
+				"date":  "2026-01-01 00:00:00",
+			},
+		},
+		{
+			name: "tags are additive",
+			input: `---
+tags: old-tag
+date: 2026-01-01 00:00:00
+---`,
+			opts: PrepareOptions{
+				Tags: []string{"new/tag", "another"},
+				Now:  fixedNow,
+			},
+			wantFM: map[string]string{
+				"tags": "old-tag, new/tag, another",
+				"date": "2026-01-01 00:00:00",
+			},
+		},
+		{
+			name: "tags additive with dedup",
+			input: `---
+tags: foo, bar
+date: 2026-01-01 00:00:00
+---`,
+			opts: PrepareOptions{
+				Tags: []string{"bar", "baz"},
+				Now:  fixedNow,
+			},
+			wantFM: map[string]string{
+				"tags": "foo, bar, baz",
+				"date": "2026-01-01 00:00:00",
+			},
+		},
+		{
+			name: "default date does not overwrite existing",
+			input: `---
+date: 2026-01-01 00:00:00
+---`,
+			opts: PrepareOptions{Now: fixedNow},
+			wantFM: map[string]string{
+				"date": "2026-01-01 00:00:00",
+			},
+		},
+		{
+			name: "default date fills missing",
+			input: `---
+title: No date
+---`,
+			opts: PrepareOptions{Now: fixedNow},
+			wantFM: map[string]string{
+				"title": "No date",
+				"date":  "2026-03-28 14:30:00",
+			},
+		},
+		{
+			name: "title not provided preserves existing",
+			input: `---
+title: Keep me
+date: 2026-01-01 00:00:00
+---`,
+			opts: PrepareOptions{Now: fixedNow},
+			wantFM: map[string]string{
+				"title": "Keep me",
+				"date":  "2026-01-01 00:00:00",
+			},
+		},
+		{
+			name: "tags not provided preserves existing",
+			input: `---
+tags: keep/me, also-me
+date: 2026-01-01 00:00:00
+---`,
+			opts: PrepareOptions{Now: fixedNow},
+			wantFM: map[string]string{
+				"tags": "keep/me, also-me",
+				"date": "2026-01-01 00:00:00",
+			},
+		},
+		{
+			name: "unrecognized frontmatter keys preserved",
+			input: `---
+title: Test
+date: 2026-01-01 00:00:00
+href: https://example.com
+custom: value
+---`,
+			opts: PrepareOptions{Now: fixedNow},
+			wantFM: map[string]string{
+				"title":  "Test",
+				"date":   "2026-01-01 00:00:00",
+				"href":   "https://example.com",
+				"custom": "value",
+			},
+		},
+		{
+			name:    "malformed yaml returns error",
+			input:   "---\n\tbad: [broken\n---\n",
+			opts:    PrepareOptions{Now: fixedNow},
+			wantErr: true,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			var r *strings.Reader
+			if tt.input != "" {
+				r = strings.NewReader(tt.input)
+			}
+
+			var note *Note
+			var err error
+			if r != nil {
+				note, err = Prepare(r, tt.opts)
+			} else {
+				note, err = Prepare(nil, tt.opts)
+			}
+
+			if tt.wantErr {
+				if err == nil {
+					t.Fatal("Prepare() err = <nil>, want error")
+				}
+				return
+			}
+			if err != nil {
+				t.Fatalf("Prepare() err = %q", err)
+			}
+
+			for k, want := range tt.wantFM {
+				got, ok := note.Frontmatter.Get(k)
+				if !ok {
+					t.Errorf("Frontmatter.Get(%q) not found, want %q", k, want)
+				} else if got != want {
+					t.Errorf("Frontmatter.Get(%q) = %q, want %q", k, got, want)
+				}
+			}
+		})
+	}
+}
+
+func TestPrepareComputedFields(t *testing.T) {
+	t.Run("title sets slug", func(t *testing.T) {
+		note, err := Prepare(nil, PrepareOptions{
+			Title: StringPtr("Hello World"),
+			Now:   fixedNow,
+		})
+		if err != nil {
+			t.Fatalf("Prepare() err = %q", err)
+		}
+		if note.Title != "Hello World" {
+			t.Errorf("Title = %q, want %q", note.Title, "Hello World")
+		}
+		if note.Slug != "hello-world" {
+			t.Errorf("Slug = %q, want %q", note.Slug, "hello-world")
+		}
+	})
+
+	t.Run("title overwrites updates slug", func(t *testing.T) {
+		input := "---\ntitle: Old Title\ndate: 2026-01-01 00:00:00\n---\n"
+		note, err := Prepare(strings.NewReader(input), PrepareOptions{
+			Title: StringPtr("New Title"),
+			Now:   fixedNow,
+		})
+		if err != nil {
+			t.Fatalf("Prepare() err = %q", err)
+		}
+		if note.Slug != "new-title" {
+			t.Errorf("Slug = %q, want %q", note.Slug, "new-title")
+		}
+	})
+
+	t.Run("tags parsed into slice", func(t *testing.T) {
+		note, err := Prepare(nil, PrepareOptions{
+			Tags: []string{"foo/bar", "baz"},
+			Now:  fixedNow,
+		})
+		if err != nil {
+			t.Fatalf("Prepare() err = %q", err)
+		}
+		want := []string{"foo/bar", "baz"}
+		if diff := cmp.Diff(want, note.Tags); diff != "" {
+			t.Errorf("Tags diff (-want, +got):\n%s", diff)
+		}
+	})
+
+	t.Run("no title means empty slug", func(t *testing.T) {
+		note, err := Prepare(nil, PrepareOptions{Now: fixedNow})
+		if err != nil {
+			t.Fatalf("Prepare() err = %q", err)
+		}
+		if note.Title != "" {
+			t.Errorf("Title = %q, want empty", note.Title)
+		}
+		if note.Slug != "" {
+			t.Errorf("Slug = %q, want empty", note.Slug)
+		}
+	})
+}
+
+func TestPreparePreservesBody(t *testing.T) {
+	input := `---
+title: Test
+date: 2026-01-01 00:00:00
+---
+
+Body with [[20260101-1]] link.
+
+More content.`
+
+	note, err := Prepare(strings.NewReader(input), PrepareOptions{
+		Title: StringPtr("Updated"),
+		Now:   fixedNow,
+	})
+	if err != nil {
+		t.Fatalf("Prepare() err = %q", err)
+	}
+
+	wantBody := "\nBody with [[20260101-1]] link.\n\nMore content."
+	if note.Body != wantBody {
+		t.Errorf("Body diff:\n%s", cmp.Diff(wantBody, note.Body))
+	}
+
+	wantLinks := []string{"20260101-1"}
+	if diff := cmp.Diff(wantLinks, note.InternalLinks); diff != "" {
+		t.Errorf("InternalLinks diff:\n%s", diff)
+	}
+}
+
+func TestMergeTags(t *testing.T) {
+	tests := []struct {
+		name     string
+		existing []string
+		extra    []string
+		want     []string
+	}{
+		{
+			name:     "both empty",
+			existing: nil,
+			extra:    nil,
+			want:     nil,
+		},
+		{
+			name:     "existing only",
+			existing: []string{"a", "b"},
+			extra:    []string{"a", "b"},
+			want:     []string{"a", "b"},
+		},
+		{
+			name:     "new tags from extra",
+			existing: []string{"a"},
+			extra:    []string{"a", "b"},
+			want:     []string{"a", "b"},
+		},
+		{
+			name:     "tags removed from fs",
+			existing: []string{"a", "b"},
+			extra:    []string{"a"},
+			want:     []string{"a"},
+		},
+		{
+			name:     "order preserved existing first new appended",
+			existing: []string{"a"},
+			extra:    []string{"b", "a"},
+			want:     []string{"a", "b"},
+		},
+		{
+			name:     "duplicates in existing and extra deduped",
+			existing: []string{"a", "a"},
+			extra:    []string{"a", "b"},
+			want:     []string{"a", "b"},
+		},
+		{
+			name:     "all tags removed",
+			existing: []string{"a", "b"},
+			extra:    nil,
+			want:     nil,
+		},
+		{
+			name:     "all tags new from extra",
+			existing: nil,
+			extra:    []string{"x", "y"},
+			want:     []string{"x", "y"},
+		},
+		{
+			name:     "duplicates in extra deduped",
+			existing: []string{"a"},
+			extra:    []string{"b", "a"},
+			want:     []string{"a", "b"},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := mergeTags(tt.existing, tt.extra)
+			if diff := cmp.Diff(tt.want, got); diff != "" {
+				t.Errorf("mergeTags() diff (-want, +got):\n%s", diff)
+			}
+		})
+	}
+}
+
+func TestPrepareExtraFrontmatter(t *testing.T) {
+	tests := []struct {
+		name   string
+		input  string
+		opts   PrepareOptions
+		wantFM map[string]string
+	}{
+		{
+			name:  "sets custom fields",
+			input: "---\ntitle: Test\ndate: 2026-01-01 00:00:00\n---\n",
+			opts: PrepareOptions{
+				ExtraFrontmatter: []FrontmatterField{
+					{Key: "href", Value: "https://example.com"},
+					{Key: "author", Value: "Alice"},
+				},
+				Now: fixedNow,
+			},
+			wantFM: map[string]string{
+				"title":  "Test",
+				"date":   "2026-01-01 00:00:00",
+				"href":   "https://example.com",
+				"author": "Alice",
+			},
+		},
+		{
+			name:  "on empty note",
+			input: "",
+			opts: PrepareOptions{
+				ExtraFrontmatter: []FrontmatterField{
+					{Key: "custom", Value: "value"},
+				},
+				Now: fixedNow,
+			},
+			wantFM: map[string]string{
+				"date":   "2026-03-28 14:30:00",
+				"custom": "value",
+			},
+		},
+		{
+			name: "overwrites existing value",
+			input: `---
+title: Old
+date: 2026-01-01 00:00:00
+author: Bob
+---
+`,
+			opts: PrepareOptions{
+				ExtraFrontmatter: []FrontmatterField{
+					{Key: "author", Value: "Alice"},
+				},
+				Now: fixedNow,
+			},
+			wantFM: map[string]string{
+				"title":  "Old",
+				"date":   "2026-01-01 00:00:00",
+				"author": "Alice",
+			},
+		},
+		{
+			name:  "combinable with tags",
+			input: "---\ndate: 2026-01-01 00:00:00\n---\n",
+			opts: PrepareOptions{
+				Tags: []string{"foo", "bar"},
+				ExtraFrontmatter: []FrontmatterField{
+					{Key: "status", Value: "draft"},
+				},
+				Now: fixedNow,
+			},
+			wantFM: map[string]string{
+				"date":   "2026-01-01 00:00:00",
+				"tags":   "foo, bar",
+				"status": "draft",
+			},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			var r *strings.Reader
+			if tt.input != "" {
+				r = strings.NewReader(tt.input)
+			}
+
+			var note *Note
+			var err error
+			if r != nil {
+				note, err = Prepare(r, tt.opts)
+			} else {
+				note, err = Prepare(nil, tt.opts)
+			}
+			if err != nil {
+				t.Fatalf("Prepare() err = %q", err)
+			}
+
+			for k, want := range tt.wantFM {
+				got, ok := note.Frontmatter.Get(k)
+				if !ok {
+					t.Errorf("Frontmatter.Get(%q) not found, want %q", k, want)
+				} else if got != want {
+					t.Errorf("Frontmatter.Get(%q) = %q, want %q", k, got, want)
+				}
+			}
+		})
+	}
+}
+
+func TestDedupStrings(t *testing.T) {
+	tests := []struct {
+		name string
+		in   []string
+		want []string
+	}{
+		{"nil", nil, nil},
+		{"empty", []string{}, nil},
+		{"no dups", []string{"a", "b"}, []string{"a", "b"}},
+		{"dups", []string{"a", "b", "a", "c", "b"}, []string{"a", "b", "c"}},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := dedupStrings(tt.in)
+			if diff := cmp.Diff(tt.want, got); diff != "" {
+				t.Errorf("dedupStrings() diff (-want, +got):\n%s", diff)
 			}
 		})
 	}

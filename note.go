@@ -2,7 +2,6 @@ package gonotes
 
 import (
 	"bufio"
-	"encoding/json"
 	"fmt"
 	"io"
 	"regexp"
@@ -16,16 +15,18 @@ var reWikiLink = regexp.MustCompile(`\[\[([^\]]+)\]\]`)
 
 const frontmatterSep = "---"
 
+const dateLayout = "2006-01-02 15:04:05"
+
 type Note struct {
 	Frontmatter   *Frontmatter
 	ID            string
-	Date          time.Time // is zero if none
+	Date          time.Time
 	Title         string
 	Slug          string
 	Tags          []string
 	Body          string
 	InternalLinks []string
-	IgnoreLinks   []string // glob patterns from ignore-links frontmatter
+	IgnoreLinks   []string
 }
 
 func NewNote() *Note {
@@ -34,8 +35,6 @@ func NewNote() *Note {
 	}
 }
 
-// ReadNote parses a markdown note with optional YAML frontmatter from r.
-// The id is set directly from the parameter and is not parsed from content.
 func ReadNote(id string, r io.Reader) (*Note, error) {
 	fm, body, err := splitFrontmatterBody(r)
 	if err != nil {
@@ -48,21 +47,19 @@ func ReadNote(id string, r io.Reader) (*Note, error) {
 		Body:        body,
 	}
 
-	// Parse frontmatter if present.
 	if fm != "" {
 		if err := yaml.Unmarshal([]byte(fm), note.Frontmatter); err != nil {
 			return nil, fmt.Errorf("read note: unmarshal frontmatter: %w", err)
 		}
 	}
 
-	// Extract recognized fields.
 	if title, ok := note.Frontmatter.Get("title"); ok {
 		note.Title = title
 		note.Slug = slugify(title)
 	}
 
 	if tags, ok := note.Frontmatter.Get("tags"); ok {
-		note.Tags = parseTags(tags)
+		note.Tags = ParseTags(tags)
 	}
 
 	if dateStr, ok := note.Frontmatter.Get("date"); ok {
@@ -74,7 +71,7 @@ func ReadNote(id string, r io.Reader) (*Note, error) {
 	}
 
 	if ignoreLinks, ok := note.Frontmatter.Get("ignore-links"); ok {
-		note.IgnoreLinks = parseTags(ignoreLinks)
+		note.IgnoreLinks = ParseTags(ignoreLinks)
 	}
 
 	note.InternalLinks = parseInternalLinks(body)
@@ -82,20 +79,15 @@ func ReadNote(id string, r io.Reader) (*Note, error) {
 	return note, nil
 }
 
-// splitFrontmatterBody reads from r and separates the YAML frontmatter from
-// the body. The frontmatter delimiters (---) are not included in either part.
-// If there is no opening delimiter on the first line, everything is body.
 func splitFrontmatterBody(r io.Reader) (fm string, body string, err error) {
 	scanner := bufio.NewScanner(r)
 
 	var fmLines []string
 	var bodyLines []string
 	sepCount := 0
-	lineNum := 0
 
 	for scanner.Scan() {
 		line := scanner.Text()
-		lineNum++
 
 		if sepCount < 2 && line == frontmatterSep {
 			sepCount++
@@ -104,10 +96,8 @@ func splitFrontmatterBody(r io.Reader) (fm string, body string, err error) {
 
 		switch {
 		case sepCount == 1:
-			// Between first and second ---, this is frontmatter.
 			fmLines = append(fmLines, line)
 		default:
-			// Before first --- or after second ---, this is body.
 			bodyLines = append(bodyLines, line)
 		}
 	}
@@ -121,21 +111,30 @@ func splitFrontmatterBody(r io.Reader) (fm string, body string, err error) {
 	return fm, body, nil
 }
 
-// parseTags splits a comma-separated tag string into individual tags.
-// Each tag is trimmed of whitespace. Empty tags are dropped.
-func parseTags(s string) []string {
-	parts := strings.Split(s, ",")
-	var tags []string
-	for _, p := range parts {
-		t := strings.TrimSpace(p)
-		if t != "" {
-			tags = append(tags, t)
-		}
+func ParseTags(s string) []string {
+	s = strings.ReplaceAll(s, ",", " ")
+	parts := strings.Fields(s)
+	if len(parts) == 0 {
+		return nil
 	}
-	return tags
+	return dedupStrings(parts)
 }
 
-// parseInternalLinks extracts all [[target]] wiki-link targets from body.
+func dedupStrings(ss []string) []string {
+	if len(ss) == 0 {
+		return nil
+	}
+	seen := make(map[string]struct{}, len(ss))
+	out := make([]string, 0, len(ss))
+	for _, s := range ss {
+		if _, ok := seen[s]; !ok {
+			seen[s] = struct{}{}
+			out = append(out, s)
+		}
+	}
+	return out
+}
+
 func parseInternalLinks(body string) []string {
 	matches := reWikiLink.FindAllStringSubmatch(body, -1)
 	if len(matches) == 0 {
@@ -148,8 +147,6 @@ func parseInternalLinks(body string) []string {
 	return links
 }
 
-// Markdown serializes the note back to markdown with YAML frontmatter.
-// If there is no frontmatter (zero keys), only the body is returned.
 func (n *Note) Markdown() string {
 	var b strings.Builder
 
@@ -171,33 +168,108 @@ func (n *Note) Markdown() string {
 	return b.String()
 }
 
-// hasFrontmatterKeys reports whether the frontmatter has any key-value pairs.
 func hasFrontmatterKeys(f *Frontmatter) bool {
 	mn := f.mappingNode()
 	return len(mn.Content) > 0
 }
 
-// noteJSON is the JSON-serializable representation of a Note.
-type noteJSON struct {
-	ID            string            `json:"id,omitempty"`
-	Title         string            `json:"title,omitempty"`
-	Slug          string            `json:"slug,omitempty"`
-	Tags          []string          `json:"tags,omitempty"`
-	Body          string            `json:"body,omitempty"`
-	InternalLinks []string          `json:"internalLinks,omitempty"`
-	Frontmatter   map[string]string `json:"frontmatter,omitempty"`
+type PrepareOptions struct {
+	Title            *string
+	Tags             []string
+	ExtraFrontmatter []FrontmatterField
+	Now              func() time.Time
 }
 
-// JSON returns a pretty-printed JSON representation of the note.
-func (n *Note) JSON() ([]byte, error) {
-	v := noteJSON{
-		ID:            n.ID,
-		Title:         n.Title,
-		Slug:          n.Slug,
-		Tags:          n.Tags,
-		Body:          n.Body,
-		InternalLinks: n.InternalLinks,
-		Frontmatter:   n.Frontmatter.Map(),
+type FrontmatterField struct {
+	Key   string
+	Value string
+}
+
+func Prepare(r io.Reader, opts PrepareOptions) (*Note, error) {
+	var note *Note
+	var err error
+
+	if r != nil {
+		note, err = ReadNote("", r)
+		if err != nil {
+			return nil, fmt.Errorf("prepare: %w", err)
+		}
+	} else {
+		note = NewNote()
 	}
-	return json.MarshalIndent(v, "", "  ")
+
+	if opts.Title != nil {
+		note.Frontmatter.Set("title", *opts.Title)
+	}
+
+	if len(opts.Tags) > 0 {
+		existing, _ := note.Frontmatter.Get("tags")
+		merged := append(ParseTags(existing), opts.Tags...)
+		merged = dedupStrings(merged)
+		if len(merged) == 0 {
+			note.Frontmatter.Unset("tags")
+		} else {
+			note.Frontmatter.Set("tags", FormatTags(merged))
+		}
+	}
+
+	if _, ok := note.Frontmatter.Get("date"); !ok {
+		now := time.Now
+		if opts.Now != nil {
+			now = opts.Now
+		}
+		note.Frontmatter.Set("date", now().Local().Format(dateLayout))
+	}
+
+	if title, ok := note.Frontmatter.Get("title"); ok {
+		note.Title = title
+		note.Slug = slugify(title)
+	} else {
+		note.Title = ""
+		note.Slug = ""
+	}
+
+	if tags, ok := note.Frontmatter.Get("tags"); ok {
+		note.Tags = ParseTags(tags)
+	} else {
+		note.Tags = nil
+	}
+
+	for _, f := range opts.ExtraFrontmatter {
+		note.Frontmatter.Set(f.Key, f.Value)
+	}
+
+	return note, nil
+}
+
+func mergeTags(existing, extra []string) []string {
+	extraSet := make(map[string]struct{}, len(extra))
+	for _, t := range extra {
+		extraSet[t] = struct{}{}
+	}
+	var result []string
+	seen := make(map[string]struct{})
+	for _, t := range existing {
+		if _, ok := extraSet[t]; ok {
+			if _, ok := seen[t]; !ok {
+				result = append(result, t)
+				seen[t] = struct{}{}
+			}
+		}
+	}
+	for _, t := range extra {
+		if _, ok := seen[t]; !ok {
+			result = append(result, t)
+			seen[t] = struct{}{}
+		}
+	}
+	return result
+}
+
+func FormatTags(tags []string) string {
+	return strings.Join(tags, ", ")
+}
+
+func StringPtr(s string) *string {
+	return &s
 }

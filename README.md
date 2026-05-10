@@ -20,7 +20,7 @@ Recognized frontmatter fields:
 
 - **title** -- used for the filename slug and symlinks
 - **date** -- used for `notes/by/date/` symlinks
-- **tags** -- comma-separated, may be nested (`foo/bar`); used for `notes/by/tags/` symlinks
+- **tags** -- comma- or space-separated, may be nested (`foo/bar`); used for `notes/by/tags/` symlinks
 - **ignore-links** -- comma-separated glob patterns; matching `[[link]]` targets
   are excluded from broken-link checking during `rebuild`. Patterns use
   `filepath.Match` syntax (`*` matches within a single path segment, `?` matches
@@ -41,9 +41,7 @@ Source of truth is `notes/by/id/`. Symlinks are derived from frontmatter:
 ```
 notes/by/id/20260328-1-my-note.md              # the actual file
 notes/by/date/2026-03-28/20260328-1-my-note.md # symlink
-notes/by/tags/nested/programming/go/20260328-1-my-note.md
-notes/by/tags/flat/programming/20260328-1-my-note.md
-notes/by/tags/flat/go/20260328-1-my-note.md
+notes/by/tags/nested/programming/go/20260328-1-my-note.md  # symlink
 ```
 
 Files are stored in `files/` using ID-based folder names:
@@ -60,49 +58,29 @@ gonotes <command> [flags]
 
 Commands:
   new        Create a new note
-  update     Update existing notes
   folder     Create a new folder for file storage
   rebuild    Scan notes, report issues, rename files, rebuild symlinks
+             Use -r for reverse rebuild: sync tags from filesystem into notes
 ```
 
 **new** creates a note, writes it to `notes/by/id/`, and sets up symlinks:
 
 ```
-gonotes new -t "My Note" -T "programming/go, tools"
+gonotes new -t "My Note" -T programming/go -T tools
 gonotes new -f draft.md
-cat draft.md | gonotes new -  # read note from stdin
-gonotes new -f draft.md -Tm '^programming/go$' -Tr 'programming/golang'
-gonotes new -t "My Note" -Fk href -Fv 'https://example.com' -Fk author -Fv 'Alice'
-gonotes new -n                # dry run
+cat draft.md | gonotes new -                          # read note from stdin
+gonotes new -t "My Note" -T 'programming/go tools'    # space-separated tags
+gonotes new -Fk href -Fv 'https://example.com' -Fk author -Fv 'Alice'
+gonotes new -n                                        # dry run
 ```
 
-Flags: `-t` title, `-T` tags, `-d` date (default: now),
-`-Tm` tag regex match + `-Tr` tag regex replace (repeatable pairs),
-`-Fk` frontmatter key + `-Fv` frontmatter value (repeatable pairs),
-`-f` file, `-` read from stdin, `-o md|json` (dry run output), `-n` dry run.
+Flags: `-t` title, `-T` add tags (repeatable, comma or space separated),
+`-Fk/-Fv` frontmatter key/value pairs (repeatable), `-f` file,
+`-` read from stdin, `-n` dry run.
 
-`-T` and `-Tm/-Tr` are mutually exclusive.
-
-**update** updates existing notes by ID, file path, stdin preview, or all notes:
-
-```
-gonotes update -i 20260328-1 -t "Renamed"
-gonotes update -f notes/by/id/20260328-1-renamed.md -T "programming/go, tools"
-gonotes update -i 20260328-1-some-slug -Tm '^(code|programming)/go(/|$)' -Tr '$1/golang$2'
-gonotes update -a -Tm '^team/' -Tr 'org/'
-cat note.md | gonotes update - -Tm '^go$' -Tr 'golang'
-gonotes update -i 20260328-1 -Fk status -Fv published
-```
-
-`update` selectors (exactly one): `-i`, `-f`, `-`, `-a`.
-
-`update` mutations (at least one): `-t`, `-T`, `-d`, `-Tm/-Tr`, or `-Fk/-Fv`.
-
-Rules:
-- `-i` accepts only new IDs (`yyyymmdd-N`) with optional slug suffix
-- IDs are immutable; `-i` only selects target notes
-- `-a` cannot be combined with `-t`
-- `-T` and `-Tm/-Tr` are mutually exclusive
+`-T` adds tags to the note. If the input already has tags, the new tags are
+appended (duplicates are removed). Tags can be comma- or space-separated:
+`-T 'tag1/to/add, tag2/to/add'` or `-T 'tag1/to/add tag2/to/add'`.
 
 **folder** creates a new directory under `files/` for storing files. The folder
 name follows the same ID format as notes (`yyyymmdd-N-slug`):
@@ -125,4 +103,12 @@ note IDs and files under `files/`:
 ```
 gonotes rebuild     # interactive prompts
 gonotes rebuild -y  # skip prompts
+```
+
+With `-r`, scan tags from the symlink structure and update note frontmatter to
+match:
+
+```
+gonotes rebuild -r     # interactive prompts
+gonotes rebuild -r -y  # skip prompts
 ```
