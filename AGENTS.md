@@ -20,8 +20,8 @@ There is no Makefile. Just use standard go commands.
 
 ## Code Standards
 
-- Google Go Styleguide (itself a superset of Effective Go)
-- General spirit of idiomatic Go: keeping it simple and consise.
+- [Google Go Style Guide](https://google.github.io/styleguide/go/) (itself a superset of Effective Go)
+- General spirit of idiomatic Go: keeping it simple and concise.
 
 ## Testing Requirements
 

@@ -379,6 +379,12 @@ func TestMergeTags(t *testing.T) {
 			want:     []string{"a", "b"},
 		},
 		{
+			name:     "duplicates in existing and fs deduped",
+			existing: []string{"a", "a"},
+			fromFS:   []string{"a", "b"},
+			want:     []string{"a", "b"},
+		},
+		{
 			name:     "all tags removed",
 			existing: []string{"a", "b"},
 			fromFS:   nil,

@@ -156,22 +156,24 @@ func StringPtr(s string) *string {
 }
 
 func mergeTags(existing, fromFS []string) []string {
-	fsSet := make(map[string]bool, len(fromFS))
+	fsSet := make(map[string]struct{}, len(fromFS))
 	for _, t := range fromFS {
-		fsSet[t] = true
+		fsSet[t] = struct{}{}
 	}
 	var result []string
-	seen := make(map[string]bool)
+	seen := make(map[string]struct{})
 	for _, t := range existing {
-		if fsSet[t] && !seen[t] {
-			result = append(result, t)
-			seen[t] = true
+		if _, ok := fsSet[t]; ok {
+			if _, ok := seen[t]; !ok {
+				result = append(result, t)
+				seen[t] = struct{}{}
+			}
 		}
 	}
 	for _, t := range fromFS {
-		if !seen[t] {
+		if _, ok := seen[t]; !ok {
 			result = append(result, t)
-			seen[t] = true
+			seen[t] = struct{}{}
 		}
 	}
 	return result
