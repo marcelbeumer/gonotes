@@ -338,3 +338,76 @@ Body.`)
 		t.Error("file should not contain tags field after removing all tags")
 	}
 }
+
+func TestReconcileTags(t *testing.T) {
+	tests := []struct {
+		name     string
+		existing []string
+		fromFS   []string
+		want     []string
+	}{
+		{
+			name:     "both empty",
+			existing: nil,
+			fromFS:   nil,
+			want:     nil,
+		},
+		{
+			name:     "existing only",
+			existing: []string{"a", "b"},
+			fromFS:   []string{"a", "b"},
+			want:     []string{"a", "b"},
+		},
+		{
+			name:     "new tags from fs",
+			existing: []string{"a"},
+			fromFS:   []string{"a", "b"},
+			want:     []string{"a", "b"},
+		},
+		{
+			name:     "tags removed from fs",
+			existing: []string{"a", "b"},
+			fromFS:   []string{"a"},
+			want:     []string{"a"},
+		},
+		{
+			name:     "order preserved existing first new appended",
+			existing: []string{"a"},
+			fromFS:   []string{"b", "a"},
+			want:     []string{"a", "b"},
+		},
+		{
+			name:     "duplicates in existing and fs deduped",
+			existing: []string{"a", "a"},
+			fromFS:   []string{"a", "b"},
+			want:     []string{"a", "b"},
+		},
+		{
+			name:     "all tags removed",
+			existing: []string{"a", "b"},
+			fromFS:   nil,
+			want:     nil,
+		},
+		{
+			name:     "all tags new from fs",
+			existing: nil,
+			fromFS:   []string{"x", "y"},
+			want:     []string{"x", "y"},
+		},
+		{
+			name:     "duplicates in fs deduped",
+			existing: []string{"a"},
+			fromFS:   []string{"b", "a"},
+			want:     []string{"a", "b"},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := reconcileTags(tt.existing, tt.fromFS)
+			if diff := cmp.Diff(tt.want, got); diff != "" {
+				t.Errorf("reconcileTags() diff (-want, +got):\n%s", diff)
+			}
+		})
+	}
+}

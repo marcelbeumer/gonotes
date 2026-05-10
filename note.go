@@ -15,8 +15,11 @@ var reWikiLink = regexp.MustCompile(`\[\[([^\]]+)\]\]`)
 
 const frontmatterSep = "---"
 
+// dateLayout is the Go reference time format used for note dates.
 const dateLayout = "2006-01-02 15:04:05"
 
+// Note represents a single markdown note. The Frontmatter field is the
+// source of truth; the other fields are derived from it by deriveFields.
 type Note struct {
 	Frontmatter   *Frontmatter
 	ID            string
@@ -35,6 +38,8 @@ func NewNote() *Note {
 	}
 }
 
+// ReadNote parses a note from r. The id is set on the returned Note but is
+// not expected to come from the file content itself.
 func ReadNote(id string, r io.Reader) (*Note, error) {
 	fm, body, err := splitFrontmatterBody(r)
 	if err != nil {
@@ -53,30 +58,45 @@ func ReadNote(id string, r io.Reader) (*Note, error) {
 		}
 	}
 
-	if title, ok := note.Frontmatter.Get("title"); ok {
-		note.Title = title
-		note.Slug = slugify(title)
+	note.deriveFields()
+	return note, nil
+}
+
+// deriveFields populates the computed fields (Title, Slug, Tags, Date,
+// InternalLinks, IgnoreLinks) from Frontmatter and Body.
+func (n *Note) deriveFields() {
+	if title, ok := n.Frontmatter.Get("title"); ok {
+		n.Title = title
+		n.Slug = slugify(title)
+	} else {
+		n.Title = ""
+		n.Slug = ""
 	}
 
-	if tags, ok := note.Frontmatter.Get("tags"); ok {
-		note.Tags = ParseTags(tags)
+	if tags, ok := n.Frontmatter.Get("tags"); ok {
+		n.Tags = ParseTags(tags)
+	} else {
+		n.Tags = nil
 	}
 
-	if dateStr, ok := note.Frontmatter.Get("date"); ok {
+	if dateStr, ok := n.Frontmatter.Get("date"); ok {
 		t, err := time.Parse(dateLayout, dateStr)
 		if err != nil {
-			return note, fmt.Errorf("parse date %q: %w", dateStr, err)
+			n.Date = time.Time{}
+		} else {
+			n.Date = t
 		}
-		note.Date = t
+	} else {
+		n.Date = time.Time{}
 	}
 
-	if ignoreLinks, ok := note.Frontmatter.Get("ignore-links"); ok {
-		note.IgnoreLinks = ParseTags(ignoreLinks)
+	if ignoreLinks, ok := n.Frontmatter.Get("ignore-links"); ok {
+		n.IgnoreLinks = ParseTags(ignoreLinks)
+	} else {
+		n.IgnoreLinks = nil
 	}
 
-	note.InternalLinks = parseInternalLinks(body)
-
-	return note, nil
+	n.InternalLinks = parseInternalLinks(n.Body)
 }
 
 func splitFrontmatterBody(r io.Reader) (fm string, body string, err error) {
@@ -111,6 +131,8 @@ func splitFrontmatterBody(r io.Reader) (fm string, body string, err error) {
 	return fm, body, nil
 }
 
+// ParseTags splits a tag string by commas and/or spaces, trims whitespace,
+// and deduplicates. Returns nil for empty input.
 func ParseTags(s string) []string {
 	s = strings.ReplaceAll(s, ",", " ")
 	parts := strings.Fields(s)
@@ -150,7 +172,7 @@ func parseInternalLinks(body string) []string {
 func (n *Note) Markdown() string {
 	var b strings.Builder
 
-	if hasFrontmatterKeys(n.Frontmatter) {
+	if len(n.Frontmatter.mappingNode().Content) > 0 {
 		fmBytes, err := yaml.Marshal(n.Frontmatter)
 		if err == nil {
 			b.WriteString(frontmatterSep)
@@ -168,11 +190,6 @@ func (n *Note) Markdown() string {
 	return b.String()
 }
 
-func hasFrontmatterKeys(f *Frontmatter) bool {
-	mn := f.mappingNode()
-	return len(mn.Content) > 0
-}
-
 type PrepareOptions struct {
 	Title            *string
 	Tags             []string
@@ -185,6 +202,9 @@ type FrontmatterField struct {
 	Value string
 }
 
+// Prepare reads an existing note from r (or creates a blank one if r is nil),
+// applies the options, and returns the prepared note. Options mutate the
+// frontmatter; derived fields are populated once at the end via deriveFields.
 func Prepare(r io.Reader, opts PrepareOptions) (*Note, error) {
 	var note *Note
 	var err error
@@ -221,49 +241,12 @@ func Prepare(r io.Reader, opts PrepareOptions) (*Note, error) {
 		note.Frontmatter.Set("date", now().Local().Format(dateLayout))
 	}
 
-	if title, ok := note.Frontmatter.Get("title"); ok {
-		note.Title = title
-		note.Slug = slugify(title)
-	} else {
-		note.Title = ""
-		note.Slug = ""
-	}
-
-	if tags, ok := note.Frontmatter.Get("tags"); ok {
-		note.Tags = ParseTags(tags)
-	} else {
-		note.Tags = nil
-	}
-
 	for _, f := range opts.ExtraFrontmatter {
 		note.Frontmatter.Set(f.Key, f.Value)
 	}
 
+	note.deriveFields()
 	return note, nil
-}
-
-func mergeTags(existing, extra []string) []string {
-	extraSet := make(map[string]struct{}, len(extra))
-	for _, t := range extra {
-		extraSet[t] = struct{}{}
-	}
-	var result []string
-	seen := make(map[string]struct{})
-	for _, t := range existing {
-		if _, ok := extraSet[t]; ok {
-			if _, ok := seen[t]; !ok {
-				result = append(result, t)
-				seen[t] = struct{}{}
-			}
-		}
-	}
-	for _, t := range extra {
-		if _, ok := seen[t]; !ok {
-			result = append(result, t)
-			seen[t] = struct{}{}
-		}
-	}
-	return result
 }
 
 func FormatTags(tags []string) string {

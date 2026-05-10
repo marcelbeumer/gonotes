@@ -4,6 +4,8 @@ import (
 	"gopkg.in/yaml.v3"
 )
 
+// Frontmatter wraps yaml.Node to preserve key ordering in serialized output.
+// A simple map[string]string would lose ordering on every round-trip.
 type Frontmatter struct {
 	yaml.Node
 }

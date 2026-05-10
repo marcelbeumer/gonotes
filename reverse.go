@@ -170,7 +170,7 @@ func ReverseRebuild(baseDir string) (*ReverseRebuildReport, error) {
 			}
 
 			fromFS := fsTags[id]
-			newTags := mergeTags(note.Tags, fromFS)
+			newTags := reconcileTags(note.Tags, fromFS)
 
 			if tagsEqual(note.Tags, newTags) {
 				report.Unchanged++
@@ -224,4 +224,32 @@ func ExecuteReverseRebuild(baseDir string, changes []TagChange) error {
 	}
 
 	return RebuildSymlinks(baseDir)
+}
+
+// reconcileTags merges existing note tags with tags discovered from the
+// filesystem. A tag from existing is kept only if it also appears in fromFS;
+// tags in fromFS that are not in existing are appended. This syncs the note's
+// frontmatter to match the symlink structure on disk.
+func reconcileTags(existing, fromFS []string) []string {
+	fsSet := make(map[string]struct{}, len(fromFS))
+	for _, t := range fromFS {
+		fsSet[t] = struct{}{}
+	}
+	var result []string
+	seen := make(map[string]struct{})
+	for _, t := range existing {
+		if _, ok := fsSet[t]; ok {
+			if _, ok := seen[t]; !ok {
+				result = append(result, t)
+				seen[t] = struct{}{}
+			}
+		}
+	}
+	for _, t := range fromFS {
+		if _, ok := seen[t]; !ok {
+			result = append(result, t)
+			seen[t] = struct{}{}
+		}
+	}
+	return result
 }

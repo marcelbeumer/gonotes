@@ -32,7 +32,8 @@ Test body with [[20260101-1]] link.`)
 		t.Errorf("ID = %q, want %q", note.ID, "20260328-1")
 	}
 
-	writePath := filepath.Join(baseDir, plan.WritePath)
+	filename := NoteFilename(note.ID, note.Slug)
+	writePath := filepath.Join(baseDir, "notes", "by", "id", filename)
 	content, err := os.ReadFile(writePath)
 	if err != nil {
 		t.Fatalf("note file not found: %v", err)
@@ -98,14 +99,12 @@ func TestCreateNoteDryRun(t *testing.T) {
 	if note.ID != "20260328-1" {
 		t.Errorf("ID = %q, want %q", note.ID, "20260328-1")
 	}
-	if plan.WritePath == "" {
-		t.Error("plan.WritePath is empty")
-	}
 	if len(plan.Links) == 0 {
 		t.Error("plan has no links")
 	}
 
-	writePath := filepath.Join(baseDir, plan.WritePath)
+	filename := NoteFilename(note.ID, note.Slug)
+	writePath := filepath.Join(baseDir, "notes", "by", "id", filename)
 	if _, err := os.Stat(writePath); !os.IsNotExist(err) {
 		t.Errorf("dry run created file at %s", writePath)
 	}

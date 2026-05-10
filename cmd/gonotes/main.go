@@ -145,15 +145,19 @@ Flags:
 		return err
 	}
 
+	filename := gonotes.NoteFilename(note.ID, note.Slug)
+	writePath := filepath.Join("notes", "by", "id", filename)
+
 	if *dryRun {
 		if _, err := fmt.Fprint(os.Stdout, note.Markdown()); err != nil {
 			return err
 		}
+		fmt.Fprintf(os.Stderr, "write: %s\n", writePath)
 		fmt.Fprint(os.Stderr, plan.String())
 		return nil
 	}
 
-	fmt.Fprintln(os.Stdout, filepath.Join(baseDir, plan.WritePath))
+	fmt.Fprintln(os.Stdout, filepath.Join(baseDir, writePath))
 	return nil
 }
 

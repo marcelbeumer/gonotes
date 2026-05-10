@@ -13,6 +13,8 @@ import (
 
 var reIDPrefix = regexp.MustCompile(`^(\d{8})-(\d+)`)
 
+// readDirBatch controls how many directory entries are read per ReadDir call.
+// 256 is a reasonable batch size that balances memory use and syscall count.
 const readDirBatch = 256
 
 func MaxNumFromDir(dir string, now time.Time) (int, error) {
@@ -89,6 +91,8 @@ func FolderName(id, slug string) string {
 	return id + "-" + slug
 }
 
+// IDFromFilename extracts the note ID from a filename. The parsed return
+// value is true when the filename starts with the yyyymmdd-N format.
 func IDFromFilename(name string) (id string, parsed bool) {
 	if !strings.HasSuffix(name, ".md") {
 		return "", false

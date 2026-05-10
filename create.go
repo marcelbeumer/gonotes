@@ -9,17 +9,20 @@ import (
 )
 
 func CreateNote(baseDir string, r io.Reader, opts PrepareOptions, dryRun bool) (*Note, *Plan, error) {
+	now := time.Now
+	if opts.Now != nil {
+		now = opts.Now
+	}
+	nowTime := now()
+	opts.Now = func() time.Time { return nowTime }
+
 	note, err := Prepare(r, opts)
 	if err != nil {
 		return nil, nil, fmt.Errorf("create note: %w", err)
 	}
 
-	now := time.Now
-	if opts.Now != nil {
-		now = opts.Now
-	}
 	idDir := filepath.Join(baseDir, "notes", "by", "id")
-	id, err := NextID(idDir, now())
+	id, err := NextID(idDir, nowTime)
 	if err != nil {
 		return nil, nil, fmt.Errorf("create note: %w", err)
 	}
@@ -31,7 +34,8 @@ func CreateNote(baseDir string, r io.Reader, opts PrepareOptions, dryRun bool) (
 		return note, plan, nil
 	}
 
-	writePath := filepath.Join(baseDir, plan.WritePath)
+	filename := NoteFilename(note.ID, note.Slug)
+	writePath := filepath.Join(baseDir, "notes", "by", "id", filename)
 	writeDir := filepath.Dir(writePath)
 	if err := os.MkdirAll(writeDir, 0o755); err != nil {
 		return nil, nil, fmt.Errorf("create note: %w", err)
@@ -40,7 +44,7 @@ func CreateNote(baseDir string, r io.Reader, opts PrepareOptions, dryRun bool) (
 		return nil, nil, fmt.Errorf("create note: %w", err)
 	}
 
-	if err := plan.Execute(baseDir); err != nil {
+	if err := plan.CreateLinks(baseDir); err != nil {
 		return nil, nil, fmt.Errorf("create note: %w", err)
 	}
 

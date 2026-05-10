@@ -23,11 +23,6 @@ Body.`))
 
 	plan := NotePlan(note)
 
-	wantWrite := filepath.Join("notes", "by", "id", "20260328-1-hello-world.md")
-	if plan.WritePath != wantWrite {
-		t.Errorf("WritePath = %q, want %q", plan.WritePath, wantWrite)
-	}
-
 	gotPaths := make([]string, len(plan.Links))
 	for i, l := range plan.Links {
 		gotPaths[i] = l.Path
@@ -110,12 +105,12 @@ tags: welcome/here, welcome/there, foo/bar/x, foo/bar/y
 	if err := os.WriteFile(filepath.Join(idDir, "20260328-1-hello.md"), []byte("x"), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	if err := plan.Execute(baseDir); err != nil {
-		t.Fatalf("Execute() err = %q", err)
+	if err := plan.CreateLinks(baseDir); err != nil {
+		t.Fatalf("CreateLinks() err = %q", err)
 	}
 }
 
-func TestPlanExecuteCreatesSymlinks(t *testing.T) {
+func TestPlanCreateLinksCreatesSymlinks(t *testing.T) {
 	baseDir := t.TempDir()
 	filename := "20260328-1-hello-world.md"
 
@@ -129,7 +124,6 @@ func TestPlanExecuteCreatesSymlinks(t *testing.T) {
 	}
 
 	plan := &Plan{
-		WritePath: filepath.Join("notes", "by", "id", filename),
 		Links: []Link{
 			{
 				Path:   filepath.Join("notes", "by", "date", "2026-03-28", filename),
@@ -146,8 +140,8 @@ func TestPlanExecuteCreatesSymlinks(t *testing.T) {
 		},
 	}
 
-	if err := plan.Execute(baseDir); err != nil {
-		t.Fatalf("Execute() err = %q", err)
+	if err := plan.CreateLinks(baseDir); err != nil {
+		t.Fatalf("CreateLinks() err = %q", err)
 	}
 
 	for _, l := range plan.Links {
@@ -176,70 +170,13 @@ func TestPlanExecuteCreatesSymlinks(t *testing.T) {
 
 func TestPlanString(t *testing.T) {
 	plan := &Plan{
-		WritePath: "notes/by/id/20260328-1-hello.md",
 		Links: []Link{
 			{Path: "notes/by/date/2026-03-28/20260328-1-hello.md", Target: "../../id/20260328-1-hello.md"},
 		},
 	}
 
 	got := plan.String()
-	if !strings.Contains(got, "write: notes/by/id/20260328-1-hello.md") {
-		t.Errorf("String() missing write line, got:\n%s", got)
-	}
 	if !strings.Contains(got, "link:  notes/by/date/2026-03-28/20260328-1-hello.md -> ../../id/20260328-1-hello.md") {
 		t.Errorf("String() missing link line, got:\n%s", got)
-	}
-}
-
-func TestWriteNote(t *testing.T) {
-	dir := t.TempDir()
-
-	note, err := ReadNote("20260328-1", strings.NewReader(`---
-title: Hello
-date: 2026-03-28 14:30:00
----
-
-Body.`))
-	if err != nil {
-		t.Fatal(err)
-	}
-
-	path, err := WriteNote(dir, note)
-	if err != nil {
-		t.Fatalf("WriteNote() err = %q", err)
-	}
-
-	wantPath := filepath.Join(dir, "20260328-1-hello.md")
-	if path != wantPath {
-		t.Errorf("WriteNote() path = %q, want %q", path, wantPath)
-	}
-
-	content, err := os.ReadFile(path)
-	if err != nil {
-		t.Fatalf("ReadFile() err = %q", err)
-	}
-
-	if !strings.Contains(string(content), "title: Hello") {
-		t.Errorf("written file does not contain expected frontmatter")
-	}
-	if !strings.Contains(string(content), "Body.") {
-		t.Errorf("written file does not contain expected body")
-	}
-}
-
-func TestWriteNoteCreatesDir(t *testing.T) {
-	base := t.TempDir()
-	dir := filepath.Join(base, "notes", "by", "id")
-
-	note := NewNote()
-	note.ID = "20260328-1"
-
-	_, err := WriteNote(dir, note)
-	if err != nil {
-		t.Fatalf("WriteNote() err = %q", err)
-	}
-
-	if _, err := os.Stat(filepath.Join(dir, "20260328-1.md")); err != nil {
-		t.Errorf("file not created: %v", err)
 	}
 }

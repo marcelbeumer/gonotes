@@ -265,11 +265,8 @@ func RebuildSymlinks(baseDir string) error {
 			}
 
 			links := linkEntries(note, name)
-			plan := &Plan{
-				WritePath: filepath.Join("notes", "by", "id", name),
-				Links:     links,
-			}
-			if err := plan.Execute(baseDir); err != nil {
+			plan := &Plan{Links: links}
+			if err := plan.CreateLinks(baseDir); err != nil {
 				return fmt.Errorf("rebuild symlinks: %w", err)
 			}
 		}

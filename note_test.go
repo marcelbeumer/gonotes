@@ -8,12 +8,6 @@ import (
 	"github.com/google/go-cmp/cmp"
 )
 
-var fixedNow = func() time.Time {
-	return time.Date(2026, 3, 28, 14, 30, 0, 0, time.Local)
-}
-
-var testTime = time.Date(2026, 3, 28, 14, 30, 0, 0, time.UTC)
-
 func TestReadNote(t *testing.T) {
 	tests := []struct {
 		name    string
@@ -475,15 +469,15 @@ Body.`))
 }
 
 func TestReadNoteDateInvalid(t *testing.T) {
-	_, err := ReadNote("20260328-1", strings.NewReader(`---
+	note, err := ReadNote("20260328-1", strings.NewReader(`---
 title: Bad Date
 date: not-a-date
 ---`))
-	if err == nil {
-		t.Fatal("ReadNote() err = <nil>, want error for invalid date")
+	if err != nil {
+		t.Fatalf("ReadNote() err = %q", err)
 	}
-	if !strings.Contains(err.Error(), "parse date") {
-		t.Errorf("error = %q, want it to contain %q", err.Error(), "parse date")
+	if !note.Date.IsZero() {
+		t.Errorf("Date = %v, want zero for unparseable date", note.Date)
 	}
 }
 
@@ -799,79 +793,6 @@ More content.`
 	wantLinks := []string{"20260101-1"}
 	if diff := cmp.Diff(wantLinks, note.InternalLinks); diff != "" {
 		t.Errorf("InternalLinks diff:\n%s", diff)
-	}
-}
-
-func TestMergeTags(t *testing.T) {
-	tests := []struct {
-		name     string
-		existing []string
-		extra    []string
-		want     []string
-	}{
-		{
-			name:     "both empty",
-			existing: nil,
-			extra:    nil,
-			want:     nil,
-		},
-		{
-			name:     "existing only",
-			existing: []string{"a", "b"},
-			extra:    []string{"a", "b"},
-			want:     []string{"a", "b"},
-		},
-		{
-			name:     "new tags from extra",
-			existing: []string{"a"},
-			extra:    []string{"a", "b"},
-			want:     []string{"a", "b"},
-		},
-		{
-			name:     "tags removed from fs",
-			existing: []string{"a", "b"},
-			extra:    []string{"a"},
-			want:     []string{"a"},
-		},
-		{
-			name:     "order preserved existing first new appended",
-			existing: []string{"a"},
-			extra:    []string{"b", "a"},
-			want:     []string{"a", "b"},
-		},
-		{
-			name:     "duplicates in existing and extra deduped",
-			existing: []string{"a", "a"},
-			extra:    []string{"a", "b"},
-			want:     []string{"a", "b"},
-		},
-		{
-			name:     "all tags removed",
-			existing: []string{"a", "b"},
-			extra:    nil,
-			want:     nil,
-		},
-		{
-			name:     "all tags new from extra",
-			existing: nil,
-			extra:    []string{"x", "y"},
-			want:     []string{"x", "y"},
-		},
-		{
-			name:     "duplicates in extra deduped",
-			existing: []string{"a"},
-			extra:    []string{"b", "a"},
-			want:     []string{"a", "b"},
-		},
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			got := mergeTags(tt.existing, tt.extra)
-			if diff := cmp.Diff(tt.want, got); diff != "" {
-				t.Errorf("mergeTags() diff (-want, +got):\n%s", diff)
-			}
-		})
 	}
 }
 
