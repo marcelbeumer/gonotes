@@ -88,6 +88,10 @@ func ScanTagsFromFS(baseDir string) (map[string][]string, error) {
 		tagPath := filepath.Dir(rel)
 		tag := strings.ReplaceAll(tagPath, string(filepath.Separator), "/")
 
+		if tag == "." {
+			return nil
+		}
+
 		result[id] = append(result[id], tag)
 		return nil
 	})

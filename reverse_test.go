@@ -339,6 +339,76 @@ Body.`)
 	}
 }
 
+func TestScanTagsFromFSFileInTagsRoot(t *testing.T) {
+	baseDir := t.TempDir()
+	idDir := filepath.Join(baseDir, "notes", "by", "id")
+
+	writeTestNote(t, idDir, "20260328-1-hello.md", `---
+title: Hello
+date: 2026-03-28 14:30:00
+tags: foo
+---
+
+Body.`)
+
+	if err := RebuildSymlinks(baseDir); err != nil {
+		t.Fatalf("RebuildSymlinks() err = %q", err)
+	}
+
+	tagsDir := filepath.Join(baseDir, "notes", "by", "tags")
+	if err := os.WriteFile(filepath.Join(tagsDir, "20260328-1-hello.md"), []byte(""), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	fsTags, err := ScanTagsFromFS(baseDir)
+	if err != nil {
+		t.Fatalf("ScanTagsFromFS() err = %q", err)
+	}
+
+	want := []string{"foo"}
+	if diff := cmp.Diff(want, fsTags["20260328-1"]); diff != "" {
+		t.Errorf("tags diff (-want, +got):\n%s", diff)
+	}
+}
+
+func TestReverseRebuildRemoveTagByMovingToTagsRoot(t *testing.T) {
+	baseDir := t.TempDir()
+	idDir := filepath.Join(baseDir, "notes", "by", "id")
+
+	writeTestNote(t, idDir, "20260328-1-hello.md", `---
+title: Hello
+date: 2026-03-28 14:30:00
+tags: foo, bar
+---
+
+Body.`)
+
+	if err := RebuildSymlinks(baseDir); err != nil {
+		t.Fatalf("RebuildSymlinks() err = %q", err)
+	}
+
+	tagsDir := filepath.Join(baseDir, "notes", "by", "tags")
+	os.RemoveAll(filepath.Join(tagsDir, "foo"))
+	os.RemoveAll(filepath.Join(tagsDir, "bar"))
+	if err := os.WriteFile(filepath.Join(tagsDir, "20260328-1-hello.md"), []byte(""), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	report, err := ReverseRebuild(baseDir)
+	if err != nil {
+		t.Fatalf("ReverseRebuild() err = %q", err)
+	}
+
+	if len(report.Changes) != 1 {
+		t.Fatalf("expected 1 change, got %d", len(report.Changes))
+	}
+
+	tc := report.Changes[0]
+	if len(tc.NewTags) != 0 {
+		t.Errorf("expected empty new tags (all tags removed), got %v", tc.NewTags)
+	}
+}
+
 func TestReconcileTags(t *testing.T) {
 	tests := []struct {
 		name     string
